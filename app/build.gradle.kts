@@ -6,12 +6,12 @@ plugins {
 
 android {
     namespace = "com.walkcraft.app"
-    compileSdk = 36
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.walkcraft.app"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
 
@@ -38,7 +38,7 @@ dependencies {
     implementation(libs.androidx.material3)
 
     // Add this for local unit tests
-    testImplementation(libs.junit)
+    testImplementation("junit:junit:4.13.2")
 
     // Add these for Android instrumented tests
     androidTestImplementation(libs.androidx.junit)
