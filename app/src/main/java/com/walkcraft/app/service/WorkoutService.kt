@@ -3,11 +3,13 @@ package com.walkcraft.app.service
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.walkcraft.app.R
@@ -20,6 +22,7 @@ import java.util.UUID
 class WorkoutService : Service() {
 
     companion object {
+        private const val TAG = "WorkoutService"
         const val CHANNEL_ID = "walkcraft.workouts"
         const val NOTIF_ID = 1001
 
@@ -45,10 +48,11 @@ class WorkoutService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.d(TAG, "onCreate")
         notifMgr = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         ensureChannel()
 
-        // Safe default capabilities for MVP; will be user-configured later.
+        // Temporary defaults until Device Setup (PR 4)
         val caps = DeviceCapabilities(
             unit = SpeedUnit.MPH,
             mode = DeviceCapabilities.Mode.DISCRETE,
@@ -56,11 +60,13 @@ class WorkoutService : Service() {
         )
         engine = WorkoutEngine(caps, SpeedPolicy())
 
-        // Post an immediate foreground notification (required on O+).
+        // Show something immediately so the user sees it right after Start
         startForeground(NOTIF_ID, buildNotification(initialText = "Ready"))
+        updateNotification("Tap Start to begin workout")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d(TAG, "onStartCommand action=${intent?.action}")
         when (intent?.action) {
             ACTION_START  -> handleStart()
             ACTION_PAUSE  -> { engine.pause(); updateNotification() }
@@ -73,6 +79,7 @@ class WorkoutService : Service() {
     }
 
     override fun onDestroy() {
+        Log.d(TAG, "onDestroy")
         tickerJob?.cancel()
         scope.cancel()
         super.onDestroy()
@@ -80,7 +87,7 @@ class WorkoutService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    // -------- internals --------
+    // ---- internals ----
 
     private fun handleStart() {
         val s = engine.current()
@@ -106,7 +113,7 @@ class WorkoutService : Service() {
                         stopSelf()
                         return@launch
                     }
-                    else -> {} // Paused/Idle
+                    else -> { /* Paused/Idle */ }
                 }
             }
         }
@@ -114,8 +121,8 @@ class WorkoutService : Service() {
 
     private fun debugWorkout(): Workout {
         val blocks = listOf<Block>(
-            SteadyBlock("Warmup", 120, 2.0),
-            SteadyBlock("Steady", 300, 3.0),
+            SteadyBlock("Warmup",   120, 2.0),
+            SteadyBlock("Steady",   300, 3.0),
             SteadyBlock("Cooldown", 120, 2.0)
         )
         return Workout(UUID.randomUUID().toString(), "Debug Quick", blocks)
@@ -126,21 +133,22 @@ class WorkoutService : Service() {
             val ch = NotificationChannel(
                 CHANNEL_ID,
                 "WalkCraft Workouts",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            ch.description = "Persistent notification while a workout runs"
+                NotificationManager.IMPORTANCE_DEFAULT // more visible than LOW
+            ).apply {
+                description = "Persistent notification while a workout runs"
+            }
             notifMgr.createNotificationChannel(ch)
         }
     }
 
     private fun buildNotification(initialText: String? = null): Notification {
-        // Use the app’s LAUNCH intent to avoid activity package mismatches.
-        val contentIntent = packageManager.getLaunchIntentForPackage(packageName)?.let { launch ->
-            launch.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            androidx.core.app.PendingIntentCompat.getActivity(
-                this, 0, launch, 0, false
-            )
+        // Use app launch intent (avoids hard-coding MainActivity path)
+        val launch = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
+        val contentPI = PendingIntent.getActivity(
+            this, 0, launch, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
 
         val title = "WalkCraft Workout"
         val text = initialText ?: runCatching {
@@ -159,17 +167,19 @@ class WorkoutService : Service() {
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle(title)
             .setContentText(text)
-            .setOngoing(true)
             .setOnlyAlertOnce(true)
-
-        if (contentIntent != null) builder.setContentIntent(contentIntent)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setForegroundServiceBehavior(
+                NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE
+            )
+            .setContentIntent(contentPI)
 
         fun action(label: String, action: String, icon: Int): NotificationCompat.Action {
-            val pi = androidx.core.app.PendingIntentCompat.getService(
+            val pi = PendingIntent.getService(
                 this, action.hashCode(),
                 Intent(this, WorkoutService::class.java).setAction(action),
-                0, // flags handled by compat
-                false
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
             return NotificationCompat.Action.Builder(icon, label, pi).build()
         }

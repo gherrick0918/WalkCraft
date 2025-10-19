@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -59,7 +60,14 @@ class MainActivity : ComponentActivity() {
     private fun DebugControls(modifier: Modifier = Modifier) {
         Column(modifier = modifier.padding(12.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { WorkoutService.start(this@MainActivity) }) {
+                Button(onClick = {
+                    WorkoutService.start(this@MainActivity)
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Starting workout… check notification",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }) {
                     Text("Start")
                 }
                 Button(onClick = {
