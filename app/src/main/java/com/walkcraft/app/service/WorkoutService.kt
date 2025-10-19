@@ -23,7 +23,8 @@ class WorkoutService : Service() {
 
     companion object {
         private const val TAG = "WorkoutService"
-        const val CHANNEL_ID = "walkcraft.workouts"
+        // NEW CHANNEL ID to avoid old importance: once set, system won't let us raise it in code
+        const val CHANNEL_ID = "walkcraft.workouts.high"
         const val NOTIF_ID = 1001
 
         const val ACTION_START  = "com.walkcraft.app.action.START"
@@ -133,9 +134,11 @@ class WorkoutService : Service() {
             val ch = NotificationChannel(
                 CHANNEL_ID,
                 "WalkCraft Workouts",
-                NotificationManager.IMPORTANCE_DEFAULT // more visible than LOW
+                NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "Persistent notification while a workout runs"
+                description = "Foreground notification while a workout runs"
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                enableVibration(true)
             }
             notifMgr.createNotificationChannel(ch)
         }
@@ -151,17 +154,15 @@ class WorkoutService : Service() {
         )
 
         val title = "WalkCraft Workout"
-        val text = initialText ?: runCatching {
-            when (val s = engine.current()) {
-                is EngineState.Running -> {
-                    val label = s.workout.blocks[s.idx].label
-                    "Running • $label • ${s.remaining}s @ ${"%.1f".format(s.speed)}"
-                }
-                is EngineState.Paused   -> "Paused"
-                is EngineState.Finished -> "Finished"
-                is EngineState.Idle     -> "Ready"
+        val text = initialText ?: when (val s = engine.current()) {
+            is EngineState.Running -> {
+                val label = s.workout.blocks[s.idx].label
+                "Running • $label • ${s.remaining}s @ ${"%.1f".format(s.speed)}"
             }
-        }.getOrDefault("Ready")
+            is EngineState.Paused   -> "Paused"
+            is EngineState.Finished -> "Finished"
+            is EngineState.Idle     -> "Ready"
+        }
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_media_play)
@@ -169,11 +170,13 @@ class WorkoutService : Service() {
             .setContentText(text)
             .setOnlyAlertOnce(true)
             .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(contentPI)
+            .setCategory(NotificationCompat.CATEGORY_WORKOUT)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setForegroundServiceBehavior(
                 NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE
             )
-            .setContentIntent(contentPI)
 
         fun action(label: String, action: String, icon: Int): NotificationCompat.Action {
             val pi = PendingIntent.getService(
