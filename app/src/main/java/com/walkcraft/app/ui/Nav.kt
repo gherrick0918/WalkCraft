@@ -23,7 +23,11 @@ fun AppNav() {
         composable(Routes.HOME) {
             HomeScreen(
                 onDeviceSetup = { nav.navigate(Routes.DEVICE_SETUP) },
-                onRun = { nav.navigate(Routes.RUN) },
+                onRun = {
+                    nav.navigate(Routes.RUN) {
+                        launchSingleTop = true
+                    }
+                },
                 onHistory = { nav.navigate(Routes.HISTORY) }
             )
         }

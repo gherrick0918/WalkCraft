@@ -32,7 +32,7 @@ sealed interface RunUiState {
                 val pretty = SpeedFmt.pretty(s.speed, unit, null)
                 RunUiState.Running(
                     blockLabel = curr.label,
-                    speedText = "$pretty ${unitLabel(unit)}",
+                    speedText = "$pretty ${SpeedFmt.unitLabel(unit)}",
                     remaining = TimeFmt.mmSs(s.remaining),
                     nextLabel = next
                 )
@@ -47,9 +47,5 @@ sealed interface RunUiState {
             }
         }
 
-        private fun unitLabel(unit: SpeedUnit): String = when (unit) {
-            SpeedUnit.MPH -> "mph"
-            SpeedUnit.KPH -> "kph"
-        }
     }
 }
