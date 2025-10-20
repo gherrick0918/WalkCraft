@@ -54,8 +54,13 @@ class WorkoutEngine(
         val s = state
         if (s is EngineState.Running) {
             val rem = s.remaining - second
-            if (rem <= 0) nextBlock(s.workout, s.idx + 1)
-            else state = s.copy(remaining = rem)
+            if (rem <= 0) {
+                // Ensure the state reflects the true boundary before recording the segment
+                state = s.copy(remaining = 0)
+                nextBlock(s.workout, s.idx + 1)
+            } else {
+                state = s.copy(remaining = rem)
+            }
         }
     }
 
@@ -78,9 +83,14 @@ class WorkoutEngine(
     private fun nextBlock(w: Workout, idx: Int) {
         val prev = (state as? EngineState.Running)
         if (prev != null) {
-            // record the elapsed time in the previous block
-            val elapsed = prev.workout.blocks[prev.idx].durationSec - prev.remaining
-            segments += CompletedSegment(prev.idx, prev.speed, elapsed)
+            val original = prev.workout.blocks[prev.idx].durationSec
+            val remaining = prev.remaining.coerceAtLeast(0)
+            val consumed = (original - remaining).coerceIn(0, original)
+            segments += CompletedSegment(
+                blockIndex = prev.idx,
+                actualSpeed = prev.speed,
+                durationSec = consumed
+            )
         }
 
         if (idx >= w.blocks.size) {
