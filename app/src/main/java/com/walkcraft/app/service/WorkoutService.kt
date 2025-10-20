@@ -140,9 +140,9 @@ class WorkoutService : Service() {
             val deviceRepo = DevicePrefsRepository.from(this@WorkoutService)
             latestSettings = withContext(Dispatchers.IO) { deviceRepo.settingsFlow.first() }
             val audioMuted = withContext(Dispatchers.IO) { userPrefs.audioMutedFlow.first() }
-            val preroll = withContext(Dispatchers.IO) { userPrefs.prerollEnabledFlow.first() }
+            val quickConfig = withContext(Dispatchers.IO) { userPrefs.quickStartConfigFlow.first() }
             audioEnabled = !audioMuted
-            preRollEnabled = preroll
+            preRollEnabled = quickConfig.preRoll
         }
 
         engine = WorkoutEngine(latestSettings.caps, latestSettings.policy)
@@ -236,6 +236,7 @@ class WorkoutService : Service() {
         Log.d(TAG, "onStartCommand action=$act extras=${intent?.extras?.keySet()?.joinToString()}")
         when {
             act == ACTION_START_QUICK || looksLikeQuickStart(intent) -> {
+                preRollEnabled = runBlocking { userPrefs.quickStartConfigFlow.first().preRoll }
                 val minutes = intent?.getIntExtra(EXTRA_MINUTES, 20) ?: 20
                 val easy    = intent?.getDoubleExtra(EXTRA_EASY, 2.0) ?: 2.0
                 val hard    = intent?.getDoubleExtra(EXTRA_HARD, 3.0) ?: 3.0

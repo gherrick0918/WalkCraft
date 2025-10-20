@@ -1,11 +1,13 @@
 package com.walkcraft.app.domain.plan
 
 import com.walkcraft.app.domain.mapper.DiscreteSpeedMapper
+import com.walkcraft.app.domain.format.SpeedFmt
 import com.walkcraft.app.domain.model.Block
 import com.walkcraft.app.domain.model.DeviceCapabilities
 import com.walkcraft.app.domain.model.SpeedPolicy
 import com.walkcraft.app.domain.model.SteadyBlock
 import com.walkcraft.app.domain.model.Workout
+import com.walkcraft.app.domain.model.RampBlock
 
 object Plans {
 
@@ -42,5 +44,39 @@ object Plans {
             name = "Quick Start ${minutes}min",
             blocks = blocks
         )
+    }
+
+    fun previewForQuickStart(
+        easy: Double,
+        hard: Double,
+        minutes: Int,
+        caps: DeviceCapabilities,
+        policy: SpeedPolicy = SpeedPolicy(),
+    ): String {
+        val workout = quickStart(easy, hard, minutes, caps, policy)
+        val includeSteady = minutes >= 5 && workout.blocks.any { it.label == "Steady" && it.durationSec > 0 }
+        val unitLabel = SpeedFmt.unitLabel(caps.unit)
+
+        fun duration(sec: Int): String = "%d:%02d".format(sec / 60, sec % 60)
+        fun speed(block: Block): String {
+            val value = when (block) {
+                is SteadyBlock -> block.targetSpeed
+                is RampBlock -> block.fromSpeed
+            }
+            val pretty = SpeedFmt.pretty(value, caps.unit, caps)
+            return "$pretty $unitLabel"
+        }
+
+        return buildString {
+            workout.blocks.forEach { block ->
+                if (!includeSteady && block.label == "Steady") return@forEach
+                if (isNotEmpty()) append(" • ")
+                append(block.label)
+                append(' ')
+                append(duration(block.durationSec))
+                append(" @ ")
+                append(speed(block))
+            }
+        }
     }
 }

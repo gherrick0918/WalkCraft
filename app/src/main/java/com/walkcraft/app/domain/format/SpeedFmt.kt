@@ -25,4 +25,8 @@ object SpeedFmt {
         val stripped = BigDecimal.valueOf(step).stripTrailingZeros()
         return stripped.scale().coerceAtLeast(0).coerceAtMost(2)
     }
+    fun unitLabel(unit: SpeedUnit): String = when (unit) {
+        SpeedUnit.MPH -> "mph"
+        SpeedUnit.KPH -> "kph"
+    }
 }

@@ -31,7 +31,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.walkcraft.app.data.prefs.DevicePrefsRepository
+import com.walkcraft.app.data.prefs.QuickStartConfig
+import com.walkcraft.app.data.prefs.UserPrefsRepository
 import com.walkcraft.app.domain.model.DeviceCapabilities
+import com.walkcraft.app.domain.plan.Plans
 import com.walkcraft.app.service.WorkoutService
 import kotlinx.coroutines.launch
 
@@ -44,31 +47,22 @@ fun HomeScreen(
 ) {
     val ctx = LocalContext.current
     val repo = remember { DevicePrefsRepository.from(ctx) }
+    val userPrefs = remember { UserPrefsRepository.from(ctx) }
     val current by repo.settingsFlow.collectAsState(initial = null)
+    val quickConfig by userPrefs.quickStartConfigFlow.collectAsState(initial = QuickStartConfig())
+    val scope = rememberCoroutineScope()
 
-    var minutes by remember { mutableStateOf(20) }
-    val (easyDefault, hardDefault) = remember(current) {
-        val caps = current?.caps
-        when (caps?.mode) {
-            DeviceCapabilities.Mode.DISCRETE -> {
-                val list = caps.allowed ?: listOf(2.0, 2.5, 3.0, 3.5)
-                val first = list.firstOrNull() ?: 2.0
-                val last = list.lastOrNull() ?: 3.0
-                first to last
-            }
-            DeviceCapabilities.Mode.INCREMENT -> {
-                val min = caps.min ?: 1.0
-                val max = caps.max ?: 3.0
-                min to max
-            }
-            else -> 2.0 to 3.0
-        }
+    var minutes by remember { mutableStateOf(quickConfig.minutes) }
+    var easy by remember { mutableStateOf(quickConfig.easy) }
+    var hard by remember { mutableStateOf(quickConfig.hard) }
+    var preRoll by remember { mutableStateOf(quickConfig.preRoll) }
+
+    LaunchedEffect(quickConfig) {
+        minutes = quickConfig.minutes
+        easy = quickConfig.easy
+        hard = quickConfig.hard
+        preRoll = quickConfig.preRoll
     }
-    var easy by remember { mutableStateOf(easyDefault) }
-    var hard by remember { mutableStateOf(hardDefault) }
-
-    LaunchedEffect(easyDefault) { easy = easyDefault }
-    LaunchedEffect(hardDefault) { hard = hardDefault }
 
     Scaffold(
         topBar = { CenterAlignedTopAppBar(title = { Text("WalkCraft") }) }
@@ -112,39 +106,79 @@ fun HomeScreen(
                 ) {
                     Text("Quick Start", style = MaterialTheme.typography.titleMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = easy.toString(),
-                            onValueChange = { it.toDoubleOrNull()?.let { v -> easy = v } },
-                            label = { Text("Easy speed") },
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = hard.toString(),
-                            onValueChange = { it.toDoubleOrNull()?.let { v -> hard = v } },
-                            label = { Text("Hard speed") },
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = minutes.toString(),
-                            onValueChange = { it.toIntOrNull()?.let { m -> minutes = m.coerceIn(5, 120) } },
-                            label = { Text("Minutes") },
-                            modifier = Modifier.width(120.dp)
-                        )
-                    }
-                    PreRollToggleRow()
-                    Button(
-                        onClick = {
-                            WorkoutService.startQuick(ctx, minutes, easy, hard)
-                            Toast.makeText(
-                                ctx,
-                                "Starting Quick Start…",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                    OutlinedTextField(
+                        value = easy.toString(),
+                        onValueChange = { text ->
+                            text.toDoubleOrNull()?.let { v ->
+                                easy = v
+                                scope.launch { userPrefs.updateQuickStartConfig { it.copy(easy = v) } }
+                            }
                         },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Start Quick Start")
+                        label = { Text("Easy speed") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = hard.toString(),
+                        onValueChange = { text ->
+                            text.toDoubleOrNull()?.let { v ->
+                                hard = v
+                                scope.launch { userPrefs.updateQuickStartConfig { it.copy(hard = v) } }
+                            }
+                        },
+                        label = { Text("Hard speed") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = minutes.toString(),
+                        onValueChange = { text ->
+                            text.toIntOrNull()?.let { m ->
+                                val clamped = m.coerceIn(1, 120)
+                                minutes = clamped
+                                scope.launch { userPrefs.updateQuickStartConfig { it.copy(minutes = clamped) } }
+                            }
+                        },
+                        label = { Text("Minutes") },
+                        modifier = Modifier.width(120.dp)
+                    )
+                }
+                val preview = remember(easy, hard, minutes, current) {
+                    current?.let { settings ->
+                        Plans.previewForQuickStart(
+                            easy = easy,
+                            hard = hard,
+                            minutes = minutes,
+                            caps = settings.caps,
+                            policy = settings.policy
+                        )
                     }
+                }
+                if (preview != null) {
+                    Text(preview, style = MaterialTheme.typography.bodyMedium)
+                } else {
+                    Text(
+                        "Set up your device to preview the plan.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                PreRollToggleRow(preRoll) { enabled ->
+                    preRoll = enabled
+                    scope.launch { userPrefs.updateQuickStartConfig { it.copy(preRoll = enabled) } }
+                }
+                Button(
+                    onClick = {
+                        WorkoutService.startQuick(ctx, minutes, easy, hard)
+                        Toast.makeText(
+                            ctx,
+                            "Starting Quick Start…",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        onRun()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Start Quick Start")
+                }
                 }
             }
 
@@ -168,16 +202,12 @@ fun HomeScreen(
 }
 
 @Composable
-private fun PreRollToggleRow() {
-    val ctx = LocalContext.current
-    val repo = remember { com.walkcraft.app.data.prefs.UserPrefsRepository.from(ctx) }
-    val scope = rememberCoroutineScope()
-    val enabled by repo.prerollEnabledFlow.collectAsState(initial = false)
-
+private fun PreRollToggleRow(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text("3–2–1 pre-roll", style = MaterialTheme.typography.bodyLarge)
-        Switch(checked = enabled, onCheckedChange = { on ->
-            scope.launch { repo.setPrerollEnabled(on) }
-        })
+        Switch(checked = enabled, onCheckedChange = onToggle)
     }
 }
