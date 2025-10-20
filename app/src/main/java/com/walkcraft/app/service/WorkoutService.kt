@@ -7,14 +7,23 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.Build
 import android.os.IBinder
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.walkcraft.app.R
 import com.walkcraft.app.data.prefs.DevicePrefsRepository
 import com.walkcraft.app.data.prefs.DeviceSettings
+import com.walkcraft.app.domain.format.Spoken
 import com.walkcraft.app.domain.engine.EngineState
 import com.walkcraft.app.domain.engine.WorkoutEngine
 import com.walkcraft.app.domain.model.Block
@@ -35,6 +44,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import java.util.Locale
 import java.util.UUID
 
 class WorkoutService : Service() {
@@ -50,6 +60,8 @@ class WorkoutService : Service() {
         const val ACTION_RESUME = "com.walkcraft.app.action.RESUME"
         const val ACTION_SKIP   = "com.walkcraft.app.action.SKIP"
         const val ACTION_STOP   = "com.walkcraft.app.action.STOP"
+        const val ACTION_MUTE   = "com.walkcraft.app.action.MUTE"
+        const val ACTION_UNMUTE = "com.walkcraft.app.action.UNMUTE"
 
         private const val EXTRA_MINUTES = "extra_minutes"
         private const val EXTRA_EASY = "extra_easy"
@@ -77,6 +89,13 @@ class WorkoutService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private lateinit var notifMgr: NotificationManager
     private lateinit var engine: WorkoutEngine
+    private var audioEnabled = true
+    private var tts: TextToSpeech? = null
+    private var tone: ToneGenerator? = null
+    private var vibrator: Vibrator? = null
+    private lateinit var audioMgr: AudioManager
+    private var focusReq: AudioFocusRequest? = null
+    private var lastAnnouncedBlockIndex: Int = -1
     private var tickerJob: Job? = null
     private var latestSettings: DeviceSettings = DeviceSettings(
         caps = DeviceCapabilities(
@@ -99,6 +118,42 @@ class WorkoutService : Service() {
 
         engine = WorkoutEngine(latestSettings.caps, latestSettings.policy)
         startForeground(NOTIF_ID, buildNotification(initialText = "Ready"))
+
+        audioMgr = getSystemService(AUDIO_SERVICE) as AudioManager
+        vibrator = getSystemService(VIBRATOR_SERVICE) as? Vibrator
+
+        tts = TextToSpeech(this) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                tts?.let { engine ->
+                    engine.language = Locale.getDefault()
+                    engine.setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build()
+                    )
+                    engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                        override fun onStart(utteranceId: String?) {}
+
+                        override fun onDone(utteranceId: String?) {
+                            abandonFocus()
+                        }
+
+                        override fun onError(utteranceId: String?) {
+                            abandonFocus()
+                        }
+
+                        override fun onError(utteranceId: String?, errorCode: Int) {
+                            abandonFocus()
+                        }
+                    })
+                }
+                Log.d(TAG, "TTS ready")
+            } else {
+                Log.w(TAG, "TTS init failed: $status")
+            }
+        }
+        tone = ToneGenerator(AudioManager.STREAM_MUSIC, 80)
 
         scope.launch {
             DevicePrefsRepository.from(this@WorkoutService).settingsFlow.collect { settings ->
@@ -133,9 +188,18 @@ class WorkoutService : Service() {
                 handleStart()
             }
             act == ACTION_PAUSE  -> { engine.pause();  updateNotification(); Log.d(TAG, "pause") }
-            act == ACTION_RESUME -> { engine.resume(); updateNotification(); Log.d(TAG, "resume") }
-            act == ACTION_SKIP   -> { engine.skip();   updateNotification(); Log.d(TAG, "skip") }
+            act == ACTION_RESUME -> { engine.resume(); updateNotification(); onTickAnnounce(); Log.d(TAG, "resume") }
+            act == ACTION_SKIP   -> { engine.skip();   updateNotification(); onTickAnnounce(); Log.d(TAG, "skip") }
             act == ACTION_STOP   -> { Log.d(TAG, "stopSelf"); stopSelf() }
+            act == ACTION_MUTE   -> {
+                audioEnabled = false
+                tts?.stop()
+                tone?.stopTone()
+                abandonFocus()
+                updateNotification()
+                Log.d(TAG, "audio=muted")
+            }
+            act == ACTION_UNMUTE -> { audioEnabled = true;  updateNotification(); Log.d(TAG, "audio=unmuted") }
             else -> {
                 // Keep the notif fresh; no state change.
                 updateNotification()
@@ -153,6 +217,12 @@ class WorkoutService : Service() {
     override fun onDestroy() {
         tickerJob?.cancel()
         scope.cancel()
+        tts?.shutdown()
+        tts = null
+        tone?.stopTone()
+        tone?.release()
+        tone = null
+        abandonFocus()
         super.onDestroy()
     }
 
@@ -179,9 +249,11 @@ class WorkoutService : Service() {
     }
 
     private fun startWorkout(w: Workout) {
+        lastAnnouncedBlockIndex = -1
         engine.start(w)
         startTicker()
         updateNotification()
+        onTickAnnounce()
         Log.d(TAG, "started workout='${w.name}' blocks=${w.blocks.size}")
     }
 
@@ -194,6 +266,7 @@ class WorkoutService : Service() {
                     is EngineState.Running -> {
                         engine.tick()
                         updateNotification()
+                        onTickAnnounce()
                     }
                     is EngineState.Finished -> {
                         updateNotification("Finished")
@@ -204,6 +277,72 @@ class WorkoutService : Service() {
                 }
             }
         }
+    }
+
+    private fun onTickAnnounce() {
+        if (!audioEnabled) return
+        val state = engine.current()
+        if (state is EngineState.Running) {
+            if (state.idx != lastAnnouncedBlockIndex) {
+                lastAnnouncedBlockIndex = state.idx
+                speakBlockIntro(state)
+            }
+            if (state.remaining in 1..3) {
+                beep()
+                vibrate(60)
+            }
+        }
+    }
+
+    private fun speakBlockIntro(state: EngineState.Running) {
+        val block = state.workout.blocks[state.idx]
+        val phrase = Spoken.blockIntro(block, latestSettings.caps.unit)
+        val ttsEngine = tts ?: return
+        if (requestFocus()) {
+            val result = ttsEngine.speak(phrase, TextToSpeech.QUEUE_FLUSH, null, "block-${state.idx}")
+            if (result != TextToSpeech.SUCCESS) {
+                abandonFocus()
+            }
+        }
+    }
+
+    private fun beep() {
+        val generator = tone ?: return
+        if (!requestFocus()) return
+        if (generator.startTone(ToneGenerator.TONE_PROP_BEEP, 130)) {
+            scope.launch {
+                delay(200)
+                abandonFocus()
+            }
+        } else {
+            abandonFocus()
+        }
+    }
+
+    private fun vibrate(ms: Long) {
+        val v = vibrator ?: return
+        if (!v.hasVibrator()) return
+        val effect = VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE)
+        v.vibrate(effect)
+    }
+
+    private fun requestFocus(): Boolean {
+        val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+            )
+            .setOnAudioFocusChangeListener { }
+            .build()
+        focusReq = req
+        return audioMgr.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+    }
+
+    private fun abandonFocus() {
+        focusReq?.let { audioMgr.abandonAudioFocusRequest(it) }
+        focusReq = null
     }
 
     private fun debugWorkout(): Workout {
@@ -235,8 +374,9 @@ class WorkoutService : Service() {
         val launch = packageManager.getLaunchIntentForPackage(packageName)?.apply {
             addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
+        val pendingFlags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         val contentPI = PendingIntent.getActivity(
-            this, 0, launch, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            this, 0, launch, pendingFlags
         )
 
         val title = "WalkCraft Workout"
@@ -264,11 +404,17 @@ class WorkoutService : Service() {
                 NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE
             )
 
+        val muteIntent = Intent(this, WorkoutService::class.java)
+            .setAction(if (audioEnabled) ACTION_MUTE else ACTION_UNMUTE)
+        val mutePi = PendingIntent.getService(this, 105, muteIntent, pendingFlags)
+        val muteActionTitle = if (audioEnabled) "Mute" else "Unmute"
+        builder.addAction(0, muteActionTitle, mutePi)
+
         fun action(label: String, action: String, icon: Int): NotificationCompat.Action {
             val pi = PendingIntent.getService(
                 this, action.hashCode(),
                 Intent(this, WorkoutService::class.java).setAction(action),
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                pendingFlags
             )
             return NotificationCompat.Action.Builder(icon, label, pi).build()
         }
