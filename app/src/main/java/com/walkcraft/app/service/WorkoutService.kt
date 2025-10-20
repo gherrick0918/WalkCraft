@@ -30,8 +30,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 class WorkoutService : Service() {
@@ -88,14 +91,28 @@ class WorkoutService : Service() {
         super.onCreate()
         notifMgr = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         ensureChannel()
+
+        runBlocking {
+            val repo = DevicePrefsRepository.from(this@WorkoutService)
+            latestSettings = withContext(Dispatchers.IO) { repo.settingsFlow.first() }
+        }
+
         engine = WorkoutEngine(latestSettings.caps, latestSettings.policy)
         startForeground(NOTIF_ID, buildNotification(initialText = "Ready"))
 
         scope.launch {
             DevicePrefsRepository.from(this@WorkoutService).settingsFlow.collect { settings ->
+                val currentState = engine.current()
+                val wasRunning = currentState is EngineState.Running || currentState is EngineState.Paused
                 latestSettings = settings
-                engine = WorkoutEngine(settings.caps, settings.policy)
-                updateNotification()
+                if (!wasRunning) {
+                    engine = WorkoutEngine(settings.caps, settings.policy)
+                    updateNotification()
+                }
+                Log.d(
+                    TAG,
+                    "settings updated; whileRunning=$wasRunning; caps=${latestSettings.caps}; policy=${latestSettings.policy}"
+                )
             }
         }
     }
