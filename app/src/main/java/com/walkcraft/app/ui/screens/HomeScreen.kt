@@ -17,6 +17,7 @@ import androidx.compose.material3.HorizontalDivider // FIX: Import HorizontalDiv
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -24,6 +25,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -31,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import com.walkcraft.app.data.prefs.DevicePrefsRepository
 import com.walkcraft.app.domain.model.DeviceCapabilities
 import com.walkcraft.app.service.WorkoutService
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -128,6 +131,7 @@ fun HomeScreen(
                             modifier = Modifier.width(120.dp)
                         )
                     }
+                    PreRollToggleRow()
                     Button(
                         onClick = {
                             WorkoutService.startQuick(ctx, minutes, easy, hard)
@@ -160,5 +164,20 @@ fun HomeScreen(
                 Text("Start Debug Workout")
             }
         }
+    }
+}
+
+@Composable
+private fun PreRollToggleRow() {
+    val ctx = LocalContext.current
+    val repo = remember { com.walkcraft.app.data.prefs.UserPrefsRepository.from(ctx) }
+    val scope = rememberCoroutineScope()
+    val enabled by repo.prerollEnabledFlow.collectAsState(initial = false)
+
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text("3–2–1 pre-roll", style = MaterialTheme.typography.bodyLarge)
+        Switch(checked = enabled, onCheckedChange = { on ->
+            scope.launch { repo.setPrerollEnabled(on) }
+        })
     }
 }

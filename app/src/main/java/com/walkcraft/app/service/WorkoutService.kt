@@ -24,6 +24,7 @@ import androidx.core.content.ContextCompat
 import com.walkcraft.app.R
 import com.walkcraft.app.data.prefs.DevicePrefsRepository
 import com.walkcraft.app.data.prefs.DeviceSettings
+import com.walkcraft.app.data.prefs.UserPrefsRepository
 import com.walkcraft.app.domain.format.Spoken
 import com.walkcraft.app.domain.engine.EngineState
 import com.walkcraft.app.domain.engine.WorkoutEngine
@@ -40,6 +41,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -90,6 +92,7 @@ class WorkoutService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private lateinit var notifMgr: NotificationManager
     private lateinit var engine: WorkoutEngine
+    private lateinit var userPrefs: UserPrefsRepository
     private var audioEnabled = true
     private var tts: TextToSpeech? = null
     private var tone: ToneGenerator? = null
@@ -98,6 +101,8 @@ class WorkoutService : Service() {
     private var focusReq: AudioFocusRequest? = null
     private var lastAnnouncedBlockIndex: Int = -1
     private var tickerJob: Job? = null
+    private var preRollEnabled = false
+    private var preRollJob: Job? = null
     private var latestSettings: DeviceSettings = DeviceSettings(
         caps = DeviceCapabilities(
             unit = SpeedUnit.MPH,
@@ -112,9 +117,15 @@ class WorkoutService : Service() {
         notifMgr = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         ensureChannel()
 
+        userPrefs = UserPrefsRepository.from(this)
+
         runBlocking {
-            val repo = DevicePrefsRepository.from(this@WorkoutService)
-            latestSettings = withContext(Dispatchers.IO) { repo.settingsFlow.first() }
+            val deviceRepo = DevicePrefsRepository.from(this@WorkoutService)
+            latestSettings = withContext(Dispatchers.IO) { deviceRepo.settingsFlow.first() }
+            val audioMuted = withContext(Dispatchers.IO) { userPrefs.audioMutedFlow.first() }
+            val preroll = withContext(Dispatchers.IO) { userPrefs.prerollEnabledFlow.first() }
+            audioEnabled = !audioMuted
+            preRollEnabled = preroll
         }
 
         engine = WorkoutEngine(latestSettings.caps, latestSettings.policy)
@@ -177,6 +188,25 @@ class WorkoutService : Service() {
                 )
             }
         }
+
+        scope.launch {
+            userPrefs.audioMutedFlow.collect { muted ->
+                audioEnabled = !muted
+                if (muted) {
+                    tts?.stop()
+                    tone?.stopTone()
+                    abandonFocus()
+                }
+                updateNotification()
+                Log.d(TAG, "audioEnabled=$audioEnabled (persisted)")
+            }
+        }
+        scope.launch {
+            userPrefs.prerollEnabledFlow.collect { enabled ->
+                preRollEnabled = enabled
+                Log.d(TAG, "preRollEnabled=$preRollEnabled (persisted)")
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -199,14 +229,18 @@ class WorkoutService : Service() {
             act == ACTION_SKIP   -> { engine.skip();   updateNotification(); onTickAnnounce(); Log.d(TAG, "skip") }
             act == ACTION_STOP   -> { Log.d(TAG, "stopSelf"); stopSelf() }
             act == ACTION_MUTE   -> {
-                audioEnabled = false
+                scope.launch { userPrefs.setAudioMuted(true) }
                 tts?.stop()
                 tone?.stopTone()
                 abandonFocus()
                 updateNotification()
-                Log.d(TAG, "audio=muted")
+                Log.d(TAG, "audio=muted (persisted)")
             }
-            act == ACTION_UNMUTE -> { audioEnabled = true;  updateNotification(); Log.d(TAG, "audio=unmuted") }
+            act == ACTION_UNMUTE -> {
+                scope.launch { userPrefs.setAudioMuted(false) }
+                updateNotification()
+                Log.d(TAG, "audio=unmuted (persisted)")
+            }
             else -> {
                 // Keep the notif fresh; no state change.
                 updateNotification()
@@ -223,6 +257,7 @@ class WorkoutService : Service() {
 
     override fun onDestroy() {
         tickerJob?.cancel()
+        preRollJob?.cancel()
         scope.cancel()
         tts?.shutdown()
         tts = null
@@ -241,7 +276,7 @@ class WorkoutService : Service() {
         val s = engine.current()
         if (s !is EngineState.Running && s !is EngineState.Paused) {
             Log.d(TAG, "Starting debug workout")
-            startWorkout(debugWorkout())
+            startWithOptionalPreroll(debugWorkout())
         } else {
             updateNotification()
         }
@@ -252,7 +287,28 @@ class WorkoutService : Service() {
             easy = easy, hard = hard, minutes = minutes,
             caps = latestSettings.caps, policy = latestSettings.policy
         )
-        startWorkout(w)
+        startWithOptionalPreroll(w)
+    }
+
+    private fun startWithOptionalPreroll(workout: Workout) {
+        preRollJob?.cancel()
+        if (preRollEnabled && audioEnabled) {
+            preRollJob = scope.launch {
+                requestFocus()
+                tts?.speak("Starting in", TextToSpeech.QUEUE_FLUSH, null, "preroll")
+                delay(350)
+                for (n in listOf(3, 2, 1)) {
+                    if (!isActive) return@launch
+                    tts?.speak(n.toString(), TextToSpeech.QUEUE_ADD, null, "preroll-$n")
+                    beep()
+                    vibrate(60)
+                    delay(850)
+                }
+                startWorkout(workout)
+            }
+        } else {
+            startWorkout(workout)
+        }
     }
 
     private fun startWorkout(w: Workout) {
@@ -262,6 +318,7 @@ class WorkoutService : Service() {
         updateNotification()
         onTickAnnounce()
         Log.d(TAG, "started workout='${w.name}' blocks=${w.blocks.size}")
+        preRollJob = null
     }
 
     private fun startTicker() {
@@ -390,7 +447,9 @@ class WorkoutService : Service() {
         val text = initialText ?: when (val s = engine.current()) {
             is EngineState.Running -> {
                 val label = s.workout.blocks[s.idx].label
-                "Running • $label • ${s.remaining}s @ ${"%.1f".format(s.speed)}"
+                val remaining = formatMmSs(s.remaining)
+                val speed = "%.1f".format(Locale.US, s.speed)
+                "Walking • $label • $remaining @ $speed ${latestSettings.caps.unit}"
             }
             is EngineState.Paused   -> "Paused"
             is EngineState.Finished -> "Finished"
@@ -446,5 +505,11 @@ class WorkoutService : Service() {
 
     private fun updateNotification(text: String? = null) {
         notifMgr.notify(NOTIF_ID, buildNotification(text))
+    }
+
+    private fun formatMmSs(seconds: Int): String {
+        val mins = seconds / 60
+        val secs = seconds % 60
+        return String.format(Locale.getDefault(), "%02d:%02d", mins, secs)
     }
 }
