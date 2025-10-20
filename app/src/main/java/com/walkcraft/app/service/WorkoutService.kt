@@ -9,34 +9,58 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
-import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.walkcraft.app.R
 import com.walkcraft.app.data.prefs.DevicePrefsRepository
+import com.walkcraft.app.data.prefs.DeviceSettings
 import com.walkcraft.app.domain.engine.EngineState
 import com.walkcraft.app.domain.engine.WorkoutEngine
-import com.walkcraft.app.domain.model.*
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.first
+import com.walkcraft.app.domain.model.Block
+import com.walkcraft.app.domain.model.DeviceCapabilities
+import com.walkcraft.app.domain.model.SpeedPolicy
+import com.walkcraft.app.domain.model.SteadyBlock
+import com.walkcraft.app.domain.model.Workout
+import com.walkcraft.app.domain.model.SpeedUnit
+import com.walkcraft.app.domain.plan.Plans
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import java.util.UUID
 
 class WorkoutService : Service() {
 
     companion object {
-        private const val TAG = "WorkoutService"
         // NEW CHANNEL ID to avoid old importance: once set, system won't let us raise it in code
         const val CHANNEL_ID = "walkcraft.workouts.high"
         const val NOTIF_ID = 1001
 
         const val ACTION_START  = "com.walkcraft.app.action.START"
+        const val ACTION_START_QUICK = "com.walkcraft.app.action.START_QUICK"
         const val ACTION_PAUSE  = "com.walkcraft.app.action.PAUSE"
         const val ACTION_RESUME = "com.walkcraft.app.action.RESUME"
         const val ACTION_SKIP   = "com.walkcraft.app.action.SKIP"
         const val ACTION_STOP   = "com.walkcraft.app.action.STOP"
 
+        private const val EXTRA_MINUTES = "extra_minutes"
+        private const val EXTRA_EASY = "extra_easy"
+        private const val EXTRA_HARD = "extra_hard"
+
         fun start(context: Context) {
             val i = Intent(context, WorkoutService::class.java).setAction(ACTION_START)
+            ContextCompat.startForegroundService(context, i)
+        }
+        fun startQuick(context: Context, minutes: Int, easy: Double, hard: Double) {
+            val i = Intent(context, WorkoutService::class.java)
+                .setAction(ACTION_START_QUICK)
+                .putExtra(EXTRA_MINUTES, minutes)
+                .putExtra(EXTRA_EASY, easy)
+                .putExtra(EXTRA_HARD, hard)
             ContextCompat.startForegroundService(context, i)
         }
         fun sendAction(context: Context, action: String) {
@@ -48,23 +72,26 @@ class WorkoutService : Service() {
     private lateinit var notifMgr: NotificationManager
     private lateinit var engine: WorkoutEngine
     private var tickerJob: Job? = null
+    private var latestSettings: DeviceSettings = DeviceSettings(
+        caps = DeviceCapabilities(
+            unit = SpeedUnit.MPH,
+            mode = DeviceCapabilities.Mode.DISCRETE,
+            allowed = listOf(2.0, 2.5, 3.0, 3.5)
+        ),
+        policy = SpeedPolicy()
+    )
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "onCreate")
         notifMgr = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         ensureChannel()
-
-        val repo = DevicePrefsRepository.from(this)
-        val initial = runBlocking { repo.settingsFlow.first() }
-
-        engine = WorkoutEngine(initial.caps, initial.policy)
-
+        engine = WorkoutEngine(latestSettings.caps, latestSettings.policy)
         startForeground(NOTIF_ID, buildNotification(initialText = "Ready"))
         updateNotification("Tap Start to begin workout")
 
         scope.launch {
-            repo.settingsFlow.collect { settings ->
+            DevicePrefsRepository.from(this@WorkoutService).settingsFlow.collect { settings ->
+                latestSettings = settings
                 engine = WorkoutEngine(settings.caps, settings.policy)
                 updateNotification("Tap Start to begin workout")
             }
@@ -72,8 +99,12 @@ class WorkoutService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "onStartCommand action=${intent?.action}")
         when (intent?.action) {
+            ACTION_START_QUICK -> handleStartQuick(
+                minutes = intent.getIntExtra(EXTRA_MINUTES, 20),
+                easy = intent.getDoubleExtra(EXTRA_EASY, 2.0),
+                hard = intent.getDoubleExtra(EXTRA_HARD, 3.0)
+            )
             ACTION_START  -> handleStart()
             ACTION_PAUSE  -> { engine.pause(); updateNotification() }
             ACTION_RESUME -> { engine.resume(); updateNotification() }
@@ -85,7 +116,6 @@ class WorkoutService : Service() {
     }
 
     override fun onDestroy() {
-        Log.d(TAG, "onDestroy")
         tickerJob?.cancel()
         scope.cancel()
         super.onDestroy()
@@ -101,6 +131,19 @@ class WorkoutService : Service() {
             engine.start(debugWorkout())
             startTicker()
         }
+        updateNotification()
+    }
+
+    private fun handleStartQuick(minutes: Int, easy: Double, hard: Double) {
+        val workout = Plans.quickStart(
+            easy = easy,
+            hard = hard,
+            minutes = minutes,
+            caps = latestSettings.caps,
+            policy = latestSettings.policy
+        )
+        engine.start(workout)
+        startTicker()
         updateNotification()
     }
 
