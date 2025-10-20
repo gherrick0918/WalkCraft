@@ -112,6 +112,7 @@ class WorkoutService : Service() {
         ),
         policy = SpeedPolicy()
     )
+    private val history by lazy { com.walkcraft.app.data.history.HistoryRepository.from(applicationContext) }
 
     override fun onCreate() {
         super.onCreate()
@@ -231,7 +232,7 @@ class WorkoutService : Service() {
             act == ACTION_PAUSE  -> { engine.pause();  updateNotification(); Log.d(TAG, "pause") }
             act == ACTION_RESUME -> { engine.resume(); updateNotification(); onTickAnnounce(); Log.d(TAG, "resume") }
             act == ACTION_SKIP   -> { engine.skip();   updateNotification(); onTickAnnounce(); Log.d(TAG, "skip") }
-            act == ACTION_STOP   -> { Log.d(TAG, "stopSelf"); stopSelf() }
+            act == ACTION_STOP   -> { Log.d(TAG, "stopSelf"); handleStopAction() }
             act == ACTION_MUTE   -> {
                 scope.launch { userPrefs.setAudioMuted(true) }
                 tts?.stop()
@@ -330,20 +331,34 @@ class WorkoutService : Service() {
         tickerJob = scope.launch {
             while (isActive) {
                 delay(1000)
-                when (engine.current()) {
+                when (val state = engine.current()) {
                     is EngineState.Running -> {
                         engine.tick()
-                        updateNotification()
-                        onTickAnnounce()
+                        val newState = engine.current()
+                        onEngineStateChanged(newState)
+                        if (newState is EngineState.Running) {
+                            updateNotification()
+                            onTickAnnounce()
+                        }
                     }
                     is EngineState.Finished -> {
-                        updateNotification("Finished")
-                        stopSelf()
+                        onEngineStateChanged(state)
                         return@launch
                     }
                     else -> { /* Paused/Idle */ }
                 }
             }
+        }
+    }
+
+    private fun onEngineStateChanged(state: EngineState) {
+        when (state) {
+            is EngineState.Finished -> {
+                scope.launch { history.insert(state.session) }
+                updateNotification("Workout complete")
+                stopSelf()
+            }
+            else -> { /* no-op */ }
         }
     }
 
@@ -437,6 +452,53 @@ class WorkoutService : Service() {
             SteadyBlock("Cooldown", 120, 2.0)
         )
         return Workout(UUID.randomUUID().toString(), "Debug Quick", blocks)
+    }
+
+    private fun handleStopAction() {
+        snapshotSessionNow()?.let { s -> scope.launch { history.insert(s) } }
+        stopSelf()
+    }
+
+    private fun snapshotSessionNow(): com.walkcraft.app.domain.model.Session? {
+        val st = engine.current()
+        val workout = (st as? EngineState.Running)?.workout ?: (st as? EngineState.Paused)?.workout ?: return null
+        val idx = when (st) {
+            is EngineState.Running -> st.idx
+            is EngineState.Paused -> st.idx
+            else -> return null
+        }
+        val remaining = when (st) {
+            is EngineState.Running -> st.remaining
+            is EngineState.Paused -> st.remaining
+            else -> 0
+        }
+        val elapsedThisBlock = (workout.blocks[idx].durationSec - remaining).coerceAtLeast(0)
+        val speed = when (st) {
+            is EngineState.Running -> st.speed
+            is EngineState.Paused -> st.speed
+            else -> 0.0
+        }
+
+        val segs = buildList {
+            if (elapsedThisBlock > 0) {
+                add(
+                    com.walkcraft.app.domain.model.CompletedSegment(
+                        idx,
+                        speed,
+                        elapsedThisBlock
+                    )
+                )
+            }
+        }
+        val totalDurationSec = segs.sumOf { it.durationSec }
+        val now = System.currentTimeMillis()
+        return com.walkcraft.app.domain.model.Session(
+            workoutId = workout.id,
+            startedAt = now - totalDurationSec * 1000L,
+            endedAt = now,
+            unit = latestSettings.caps.unit,
+            segments = segs
+        )
     }
 
     private fun ensureChannel() {
