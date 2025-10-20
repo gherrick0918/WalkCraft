@@ -37,6 +37,7 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.navigation.compose)
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
 
     // Add this for local unit tests
     testImplementation("junit:junit:4.13.2")
