@@ -123,7 +123,8 @@ fun HistoryScreen(
 
 @Composable
 private fun HistoryRow(s: Session) {
-    val title = s.workoutName ?: DateFormat.getMediumDateTimeInstance().format(Date(s.endedAt))
+    val title = s.workoutName
+        ?: DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(s.endedAt))
     val totalSec = s.segments.sumOf { it.durationSec }
     val dur = TimeFmt.hMmSs(totalSec)
     val dist = Distance.of(s)
