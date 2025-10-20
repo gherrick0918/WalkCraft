@@ -90,7 +90,8 @@ class WorkoutEngine(
                     startedAt = startedAt,
                     endedAt = System.currentTimeMillis(),
                     unit = caps.unit,
-                    segments = segments.toList()
+                    segments = segments.toList(),
+                    workoutName = w.name
                 )
             )
             return

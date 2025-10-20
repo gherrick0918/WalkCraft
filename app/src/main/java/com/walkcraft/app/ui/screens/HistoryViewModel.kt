@@ -8,13 +8,17 @@ import com.walkcraft.app.data.history.HistoryRepository
 import com.walkcraft.app.domain.model.Session
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
 class HistoryViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = HistoryRepository.from(app)
 
     val sessions: StateFlow<List<Session>> = repo.observe()
+        .map { it.sortedByDescending { s -> s.endedAt } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     suspend fun exportCsv(): String = HistoryCsv.build(repo.allOnce())
+
+    suspend fun clearAll() = repo.clear()
 }

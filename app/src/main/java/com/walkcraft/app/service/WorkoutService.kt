@@ -500,7 +500,8 @@ class WorkoutService : Service() {
             startedAt = now - totalDurationSec * 1000L,
             endedAt = now,
             unit = latestSettings.caps.unit,
-            segments = segs
+            segments = segs,
+            workoutName = workout.name
         )
     }
 
