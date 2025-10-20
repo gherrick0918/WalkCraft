@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.walkcraft.app.R
@@ -51,6 +52,8 @@ class WorkoutService : Service() {
         private const val EXTRA_EASY = "extra_easy"
         private const val EXTRA_HARD = "extra_hard"
 
+        private const val TAG = "WorkoutService"
+
         fun start(context: Context) {
             val i = Intent(context, WorkoutService::class.java).setAction(ACTION_START)
             ContextCompat.startForegroundService(context, i)
@@ -87,13 +90,12 @@ class WorkoutService : Service() {
         ensureChannel()
         engine = WorkoutEngine(latestSettings.caps, latestSettings.policy)
         startForeground(NOTIF_ID, buildNotification(initialText = "Ready"))
-        updateNotification("Tap Start to begin workout")
 
         scope.launch {
             DevicePrefsRepository.from(this@WorkoutService).settingsFlow.collect { settings ->
                 latestSettings = settings
                 engine = WorkoutEngine(settings.caps, settings.policy)
-                updateNotification("Tap Start to begin workout")
+                updateNotification()
             }
         }
     }
@@ -128,6 +130,7 @@ class WorkoutService : Service() {
     private fun handleStart() {
         val s = engine.current()
         if (s !is EngineState.Running && s !is EngineState.Paused) {
+            Log.d(TAG, "Starting debug workout")
             engine.start(debugWorkout())
             startTicker()
         }
@@ -135,6 +138,7 @@ class WorkoutService : Service() {
     }
 
     private fun handleStartQuick(minutes: Int, easy: Double, hard: Double) {
+        Log.d(TAG, "Starting quick: minutes=$minutes easy=$easy hard=$hard")
         val workout = Plans.quickStart(
             easy = easy,
             hard = hard,
