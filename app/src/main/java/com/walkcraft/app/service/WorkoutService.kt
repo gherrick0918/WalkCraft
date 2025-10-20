@@ -11,6 +11,7 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.ToneGenerator
+import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import android.os.VibrationEffect
@@ -42,6 +43,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
@@ -94,6 +98,8 @@ class WorkoutService : Service() {
     private lateinit var notifMgr: NotificationManager
     private lateinit var engine: WorkoutEngine
     private lateinit var userPrefs: UserPrefsRepository
+    private val _states = MutableStateFlow<EngineState>(EngineState.Idle(null))
+    fun states(): StateFlow<EngineState> = _states.asStateFlow()
     private var audioEnabled = true
     private var tts: TextToSpeech? = null
     @Volatile private var ttsReady = false
@@ -117,6 +123,12 @@ class WorkoutService : Service() {
         HistoryRepository.from(applicationContext)
     }
 
+    inner class LocalBinder : Binder() {
+        fun service(): WorkoutService = this@WorkoutService
+    }
+
+    private val binder = LocalBinder()
+
     override fun onCreate() {
         super.onCreate()
         notifMgr = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
@@ -134,6 +146,7 @@ class WorkoutService : Service() {
         }
 
         engine = WorkoutEngine(latestSettings.caps, latestSettings.policy)
+        publishState(engine.current())
         startForeground(NOTIF_ID, buildNotification(initialText = "Ready"))
 
         audioMgr = getSystemService(AUDIO_SERVICE) as AudioManager
@@ -188,6 +201,7 @@ class WorkoutService : Service() {
                 latestSettings = settings
                 if (!wasRunning) {
                     engine = WorkoutEngine(settings.caps, settings.policy)
+                    publishState(engine.current())
                     updateNotification()
                 }
                 Log.d(
@@ -232,9 +246,26 @@ class WorkoutService : Service() {
                 Log.d(TAG, "handleStart (debug workout)")
                 handleStart()
             }
-            act == ACTION_PAUSE  -> { engine.pause();  updateNotification(); Log.d(TAG, "pause") }
-            act == ACTION_RESUME -> { engine.resume(); updateNotification(); onTickAnnounce(); Log.d(TAG, "resume") }
-            act == ACTION_SKIP   -> { engine.skip();   updateNotification(); onTickAnnounce(); Log.d(TAG, "skip") }
+            act == ACTION_PAUSE  -> {
+                engine.pause()
+                publishState()
+                updateNotification()
+                Log.d(TAG, "pause")
+            }
+            act == ACTION_RESUME -> {
+                engine.resume()
+                publishState()
+                updateNotification()
+                onTickAnnounce()
+                Log.d(TAG, "resume")
+            }
+            act == ACTION_SKIP   -> {
+                engine.skip()
+                publishState()
+                updateNotification()
+                onTickAnnounce()
+                Log.d(TAG, "skip")
+            }
             act == ACTION_STOP   -> { Log.d(TAG, "stopSelf"); handleStopAction() }
             act == ACTION_MUTE   -> {
                 scope.launch { userPrefs.setAudioMuted(true) }
@@ -274,10 +305,11 @@ class WorkoutService : Service() {
         tone?.release()
         tone = null
         abandonFocus()
+        publishState(EngineState.Idle(null))
         super.onDestroy()
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    override fun onBind(intent: Intent?): IBinder = binder
 
     // ---- internals ----
 
@@ -287,6 +319,7 @@ class WorkoutService : Service() {
             Log.d(TAG, "Starting debug workout")
             startWithOptionalPreroll(debugWorkout())
         } else {
+            publishState(s)
             updateNotification()
         }
     }
@@ -322,6 +355,7 @@ class WorkoutService : Service() {
     private fun startWorkout(w: Workout) {
         lastAnnouncedBlockIndex = -1
         engine.start(w)
+        publishState()
         startTicker()
         updateNotification()
         onTickAnnounce()
@@ -338,6 +372,7 @@ class WorkoutService : Service() {
                     is EngineState.Running -> {
                         engine.tick()
                         val newState = engine.current()
+                        publishState(newState)
                         onEngineStateChanged(newState)
                         if (newState is EngineState.Running) {
                             updateNotification()
@@ -345,6 +380,7 @@ class WorkoutService : Service() {
                         }
                     }
                     is EngineState.Finished -> {
+                        publishState(state)
                         onEngineStateChanged(state)
                         return@launch
                     }
@@ -459,6 +495,7 @@ class WorkoutService : Service() {
 
     private fun handleStopAction() {
         snapshotSessionNow()?.let { s -> scope.launch { history.insert(s) } }
+        publishState(EngineState.Idle(null))
         stopSelf()
     }
 
@@ -592,6 +629,10 @@ class WorkoutService : Service() {
 
     private fun updateNotification(text: String? = null) {
         notifMgr.notify(NOTIF_ID, buildNotification(text))
+    }
+
+    private fun publishState(state: EngineState = engine.current()) {
+        _states.value = state
     }
 
     private fun formatDuration(seconds: Int): String {
