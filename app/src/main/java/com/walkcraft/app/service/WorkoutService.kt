@@ -13,10 +13,12 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.walkcraft.app.R
+import com.walkcraft.app.data.prefs.DevicePrefsRepository
 import com.walkcraft.app.domain.engine.EngineState
 import com.walkcraft.app.domain.engine.WorkoutEngine
 import com.walkcraft.app.domain.model.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import java.util.UUID
 
 class WorkoutService : Service() {
@@ -53,17 +55,20 @@ class WorkoutService : Service() {
         notifMgr = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         ensureChannel()
 
-        // Temporary defaults until Device Setup (PR 4)
-        val caps = DeviceCapabilities(
-            unit = SpeedUnit.MPH,
-            mode = DeviceCapabilities.Mode.DISCRETE,
-            allowed = listOf(2.0, 2.5, 3.0, 3.5)
-        )
-        engine = WorkoutEngine(caps, SpeedPolicy())
+        val repo = DevicePrefsRepository.from(this)
+        val initial = runBlocking { repo.settingsFlow.first() }
 
-        // Show something immediately so the user sees it right after Start
+        engine = WorkoutEngine(initial.caps, initial.policy)
+
         startForeground(NOTIF_ID, buildNotification(initialText = "Ready"))
         updateNotification("Tap Start to begin workout")
+
+        scope.launch {
+            repo.settingsFlow.collect { settings ->
+                engine = WorkoutEngine(settings.caps, settings.policy)
+                updateNotification("Tap Start to begin workout")
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
