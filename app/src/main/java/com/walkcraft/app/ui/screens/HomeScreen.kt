@@ -7,7 +7,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.Divider
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider // FIX: Import HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -17,6 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.walkcraft.app.service.WorkoutService
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     onDeviceSetup: () -> Unit,
@@ -46,7 +48,7 @@ fun HomeScreen(
             Button(onClick = onHistory, modifier = Modifier.fillMaxWidth()) {
                 Text("History")
             }
-            Divider()
+            HorizontalDivider() // FIX: Renamed Divider to HorizontalDivider
             // Debug action (kept until Run is wired to service)
             Button(
                 onClick = {
