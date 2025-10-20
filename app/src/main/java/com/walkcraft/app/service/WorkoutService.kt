@@ -101,20 +101,36 @@ class WorkoutService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_START_QUICK -> handleStartQuick(
-                minutes = intent.getIntExtra(EXTRA_MINUTES, 20),
-                easy = intent.getDoubleExtra(EXTRA_EASY, 2.0),
-                hard = intent.getDoubleExtra(EXTRA_HARD, 3.0)
-            )
-            ACTION_START  -> handleStart()
-            ACTION_PAUSE  -> { engine.pause(); updateNotification() }
-            ACTION_RESUME -> { engine.resume(); updateNotification() }
-            ACTION_SKIP   -> { engine.skip(); updateNotification() }
-            ACTION_STOP   -> stopSelf()
-            else          -> updateNotification()
+        val act = intent?.action
+        Log.d(TAG, "onStartCommand action=$act extras=${intent?.extras?.keySet()?.joinToString()}")
+        when {
+            act == ACTION_START_QUICK || looksLikeQuickStart(intent) -> {
+                val minutes = intent?.getIntExtra(EXTRA_MINUTES, 20) ?: 20
+                val easy    = intent?.getDoubleExtra(EXTRA_EASY, 2.0) ?: 2.0
+                val hard    = intent?.getDoubleExtra(EXTRA_HARD, 3.0) ?: 3.0
+                Log.d(TAG, "handleStartQuick minutes=$minutes easy=$easy hard=$hard caps=${latestSettings.caps} policy=${latestSettings.policy}")
+                handleStartQuick(minutes, easy, hard)
+            }
+            act == ACTION_START -> {
+                Log.d(TAG, "handleStart (debug workout)")
+                handleStart()
+            }
+            act == ACTION_PAUSE  -> { engine.pause();  updateNotification(); Log.d(TAG, "pause") }
+            act == ACTION_RESUME -> { engine.resume(); updateNotification(); Log.d(TAG, "resume") }
+            act == ACTION_SKIP   -> { engine.skip();   updateNotification(); Log.d(TAG, "skip") }
+            act == ACTION_STOP   -> { Log.d(TAG, "stopSelf"); stopSelf() }
+            else -> {
+                // Keep the notif fresh; no state change.
+                updateNotification()
+            }
         }
-        return START_STICKY
+        // If system kills us after this, redeliver the intent so Quick Start still fires
+        return START_REDELIVER_INTENT
+    }
+
+    private fun looksLikeQuickStart(i: Intent?): Boolean {
+        if (i == null) return false
+        return i.hasExtra(EXTRA_MINUTES) || i.hasExtra(EXTRA_EASY) || i.hasExtra(EXTRA_HARD)
     }
 
     override fun onDestroy() {
@@ -131,24 +147,25 @@ class WorkoutService : Service() {
         val s = engine.current()
         if (s !is EngineState.Running && s !is EngineState.Paused) {
             Log.d(TAG, "Starting debug workout")
-            engine.start(debugWorkout())
-            startTicker()
+            startWorkout(debugWorkout())
+        } else {
+            updateNotification()
         }
-        updateNotification()
     }
 
     private fun handleStartQuick(minutes: Int, easy: Double, hard: Double) {
-        Log.d(TAG, "Starting quick: minutes=$minutes easy=$easy hard=$hard")
-        val workout = Plans.quickStart(
-            easy = easy,
-            hard = hard,
-            minutes = minutes,
-            caps = latestSettings.caps,
-            policy = latestSettings.policy
+        val w = Plans.quickStart(
+            easy = easy, hard = hard, minutes = minutes,
+            caps = latestSettings.caps, policy = latestSettings.policy
         )
-        engine.start(workout)
+        startWorkout(w)
+    }
+
+    private fun startWorkout(w: Workout) {
+        engine.start(w)
         startTicker()
         updateNotification()
+        Log.d(TAG, "started workout='${w.name}' blocks=${w.blocks.size}")
     }
 
     private fun startTicker() {

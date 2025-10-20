@@ -133,7 +133,7 @@ fun HomeScreen(
                             WorkoutService.startQuick(ctx, minutes, easy, hard)
                             Toast.makeText(
                                 ctx,
-                                "Starting: $minutes min (easy $easy, hard $hard)…",
+                                "Starting Quick Start…",
                                 Toast.LENGTH_SHORT
                             ).show()
                         },
