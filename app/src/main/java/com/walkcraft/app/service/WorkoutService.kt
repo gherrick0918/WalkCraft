@@ -22,6 +22,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.walkcraft.app.R
+import com.walkcraft.app.data.history.HistoryRepository
 import com.walkcraft.app.data.prefs.DevicePrefsRepository
 import com.walkcraft.app.data.prefs.DeviceSettings
 import com.walkcraft.app.data.prefs.UserPrefsRepository
@@ -112,7 +113,9 @@ class WorkoutService : Service() {
         ),
         policy = SpeedPolicy()
     )
-    private val history by lazy { com.walkcraft.app.data.history.HistoryRepository.from(applicationContext) }
+    private val history: HistoryRepository by lazy {
+        HistoryRepository.from(applicationContext)
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -530,7 +533,7 @@ class WorkoutService : Service() {
         val text = initialText ?: when (val s = engine.current()) {
             is EngineState.Running -> {
                 val label = s.workout.blocks[s.idx].label
-                val remaining = formatMmSs(s.remaining)
+                val remaining = formatDuration(s.remaining)
                 val speed = "%.1f".format(Locale.US, s.speed)
                 "Walking • $label • $remaining @ $speed ${latestSettings.caps.unit}"
             }
@@ -590,9 +593,10 @@ class WorkoutService : Service() {
         notifMgr.notify(NOTIF_ID, buildNotification(text))
     }
 
-    private fun formatMmSs(seconds: Int): String {
-        val mins = seconds / 60
-        val secs = seconds % 60
-        return String.format(Locale.getDefault(), "%02d:%02d", mins, secs)
+    private fun formatDuration(seconds: Int): String {
+        val total = seconds.coerceAtLeast(0)
+        val minutes = total / 60
+        val secs = total % 60
+        return if (minutes > 0) "%d:%02d".format(minutes, secs) else "%ds".format(secs)
     }
 }
