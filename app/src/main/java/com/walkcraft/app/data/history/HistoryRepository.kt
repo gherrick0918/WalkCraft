@@ -22,6 +22,10 @@ class HistoryRepository private constructor(
         lock.withLock { _sessions.value = _sessions.value + session }
     }
 
+    suspend fun clear() {
+        lock.withLock { _sessions.value = emptyList() }
+    }
+
     fun observe(): Flow<List<Session>> = sessions
     suspend fun allOnce(): List<Session> = sessions.first()
 

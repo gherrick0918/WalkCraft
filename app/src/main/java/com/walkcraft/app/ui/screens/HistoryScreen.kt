@@ -37,9 +37,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.walkcraft.app.domain.format.SpeedFmt
 import com.walkcraft.app.domain.format.TimeFmt
 import com.walkcraft.app.domain.metric.Distance
 import kotlinx.coroutines.launch
+import java.text.DateFormat
+import java.util.Date
 
 private typealias Session = com.walkcraft.app.domain.model.Session
 
@@ -68,6 +71,13 @@ fun HistoryScreen(
                         Icon(Icons.Filled.MoreVert, contentDescription = "More")
                     }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Clear history") },
+                            onClick = {
+                                showMenu = false
+                                scope.launch { vm.clearAll() }
+                            }
+                        )
                         DropdownMenuItem(
                             text = { Text("Export CSV") },
                             onClick = {
@@ -113,6 +123,7 @@ fun HistoryScreen(
 
 @Composable
 private fun HistoryRow(s: Session) {
+    val title = s.workoutName ?: DateFormat.getMediumDateTimeInstance().format(Date(s.endedAt))
     val totalSec = s.segments.sumOf { it.durationSec }
     val dur = TimeFmt.hMmSs(totalSec)
     val dist = Distance.of(s)
@@ -126,15 +137,14 @@ private fun HistoryRow(s: Session) {
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .padding(16.dp)
     ) {
-        Text(s.workoutId ?: "Session", style = MaterialTheme.typography.titleMedium)
+        Text(title, style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(6.dp))
         Text("$dur • $distText", style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(6.dp))
         s.segments.take(6).forEach { seg ->
-            Text(
-                "Block ${seg.blockIndex}: ${seg.actualSpeed} @ ${TimeFmt.mmSs(seg.durationSec)}",
-                style = MaterialTheme.typography.bodySmall
-            )
+            val segDur = TimeFmt.mmSs(seg.durationSec)
+            val speedText = SpeedFmt.pretty(seg.actualSpeed, s.unit, null)
+            Text("Block ${seg.blockIndex}: $speedText @ $segDur", style = MaterialTheme.typography.bodySmall)
         }
     }
 }
