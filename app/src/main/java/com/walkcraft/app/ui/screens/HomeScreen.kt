@@ -151,7 +151,7 @@ fun HomeScreen(
                     WorkoutService.start(ctx)
                     Toast.makeText(
                         ctx,
-                        "Starting workout… check notification",
+                        "Starting workout…",
                         Toast.LENGTH_SHORT
                     ).show()
                 },
