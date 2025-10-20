@@ -95,6 +95,7 @@ class WorkoutService : Service() {
     private lateinit var userPrefs: UserPrefsRepository
     private var audioEnabled = true
     private var tts: TextToSpeech? = null
+    @Volatile private var ttsReady = false
     private var tone: ToneGenerator? = null
     private var vibrator: Vibrator? = null
     private lateinit var audioMgr: AudioManager
@@ -140,6 +141,7 @@ class WorkoutService : Service() {
             vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
         }
 
+        ttsReady = false
         tts = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 tts?.let { engine ->
@@ -166,8 +168,10 @@ class WorkoutService : Service() {
                         }
                     })
                 }
+                ttsReady = true
                 Log.d(TAG, "TTS ready")
             } else {
+                ttsReady = false
                 Log.w(TAG, "TTS init failed: $status")
             }
         }
@@ -259,6 +263,7 @@ class WorkoutService : Service() {
         tickerJob?.cancel()
         preRollJob?.cancel()
         scope.cancel()
+        ttsReady = false
         tts?.shutdown()
         tts = null
         tone?.stopTone()
@@ -294,12 +299,11 @@ class WorkoutService : Service() {
         preRollJob?.cancel()
         if (preRollEnabled && audioEnabled) {
             preRollJob = scope.launch {
-                requestFocus()
-                tts?.speak("Starting in", TextToSpeech.QUEUE_FLUSH, null, "preroll")
+                speakWhenReady("Starting in", flush = true, id = "preroll")
                 delay(350)
                 for (n in listOf(3, 2, 1)) {
                     if (!isActive) return@launch
-                    tts?.speak(n.toString(), TextToSpeech.QUEUE_ADD, null, "preroll-$n")
+                    speakWhenReady(n.toString(), id = "preroll-$n")
                     beep()
                     vibrate(60)
                     delay(850)
@@ -361,12 +365,29 @@ class WorkoutService : Service() {
     private fun speakBlockIntro(state: EngineState.Running) {
         val block = state.workout.blocks[state.idx]
         val phrase = Spoken.blockIntro(block, latestSettings.caps.unit)
-        val ttsEngine = tts ?: return
-        if (requestFocus()) {
-            val result = ttsEngine.speak(phrase, TextToSpeech.QUEUE_FLUSH, null, "block-${state.idx}")
-            if (result != TextToSpeech.SUCCESS) {
-                abandonFocus()
-            }
+        scope.launch {
+            speakWhenReady(phrase, flush = true, id = "intro-${state.idx}")
+        }
+    }
+
+    private suspend fun awaitTtsReady(timeoutMs: Long = 2000L): Boolean {
+        if (ttsReady) return true
+        val start = android.os.SystemClock.uptimeMillis()
+        while (!ttsReady && android.os.SystemClock.uptimeMillis() - start < timeoutMs) {
+            kotlinx.coroutines.delay(50)
+        }
+        return ttsReady
+    }
+
+    private suspend fun speakWhenReady(text: String, flush: Boolean = false, id: String = "speak") {
+        if (!audioEnabled) return
+        if (!awaitTtsReady()) return
+        if (!requestFocus()) return
+        val queueMode = if (flush) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+        val utteranceId = if (flush) "$id-f" else "$id-a"
+        val result = tts?.speak(text, queueMode, null, utteranceId) ?: TextToSpeech.ERROR
+        if (result != TextToSpeech.SUCCESS) {
+            abandonFocus()
         }
     }
 
