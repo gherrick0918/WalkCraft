@@ -25,6 +25,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -41,6 +44,8 @@ dependencies {
 
     // Add this for local unit tests
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.11.1")
+    testImplementation("androidx.test:core:1.5.0")
 
     // Add these for Android instrumented tests
     androidTestImplementation(libs.androidx.junit)
