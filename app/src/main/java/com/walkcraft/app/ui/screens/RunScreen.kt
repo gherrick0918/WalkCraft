@@ -34,6 +34,7 @@ import com.walkcraft.app.ui.screens.run.RunViewModel
 @Composable
 fun RunScreen(
     onBack: () -> Unit,
+    onFinished: (String?) -> Unit,
     vm: RunViewModel = hiltViewModel()
 ) {
     val ui by vm.ui.collectAsState()
@@ -50,8 +51,10 @@ fun RunScreen(
                 first = false
                 return@collect
             }
-            if (state is EngineState.Finished || state is EngineState.Idle) {
-                onBack()
+            when (state) {
+                is EngineState.Finished -> onFinished(state.session.id)
+                is EngineState.Idle -> onBack()
+                else -> Unit
             }
         }
     }
