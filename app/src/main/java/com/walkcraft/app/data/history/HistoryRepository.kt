@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -35,7 +36,16 @@ class HistoryRepository private constructor(
     }
 
     fun observe(): Flow<List<Session>> = sessions
+    fun observeSession(sessionId: String): Flow<Session?> =
+        sessions.map { it.firstOrNull { session -> session.id == sessionId } }
+
     suspend fun allOnce(): List<Session> = sessions.first()
+
+    suspend fun getAllSessions(): List<Session> =
+        lock.withLock { sessionMap.values.toList() }
+
+    suspend fun getSessionWithSegments(sessionId: String): Session? =
+        lock.withLock { sessionMap[sessionId] }
 
     companion object {
         @Volatile

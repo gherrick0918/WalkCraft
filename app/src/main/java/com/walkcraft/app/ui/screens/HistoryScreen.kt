@@ -1,6 +1,5 @@
 package com.walkcraft.app.ui.screens
 
-import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
@@ -42,10 +42,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.walkcraft.app.ui.Routes
+import com.walkcraft.app.ui.share.ShareCsv
 import com.walkcraft.app.domain.format.SpeedFmt
 import com.walkcraft.app.domain.format.TimeFmt
 import com.walkcraft.app.domain.metric.Distance
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.util.Date
 
@@ -107,17 +111,18 @@ fun HistoryScreen(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Export CSV") },
+                            text = { Text("Export all (.csv)") },
                             onClick = {
                                 showMenu = false
                                 scope.launch {
-                                    val csv = vm.exportCsv()
-                                    val intent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "text/csv"
-                                        putExtra(Intent.EXTRA_TEXT, csv)
-                                        putExtra(Intent.EXTRA_SUBJECT, "WalkCraft History")
-                                    }
-                                    ctx.startActivity(Intent.createChooser(intent, "Export history"))
+                                    val csv = withContext(Dispatchers.Default) { vm.exportCsv() }
+                                    val fileName = "walkcraft-sessions-${System.currentTimeMillis()}.csv"
+                                    ShareCsv.shareTextAsCsv(
+                                        context = ctx,
+                                        fileName = fileName,
+                                        csv = csv,
+                                        chooserTitle = "Export history"
+                                    )
                                 }
                             }
                         )
@@ -142,7 +147,10 @@ fun HistoryScreen(
                     .padding(padding)
             ) {
                 items(items, key = { it.id }) { session ->
-                    HistoryRow(session)
+                    HistoryRow(
+                        session = session,
+                        onClick = { navController.navigate(Routes.historyDetail(session.id)) }
+                    )
                 }
             }
         }
@@ -150,7 +158,7 @@ fun HistoryScreen(
 }
 
 @Composable
-private fun HistoryRow(s: Session) {
+private fun HistoryRow(s: Session, onClick: () -> Unit) {
     val title = s.workoutName
         ?: DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(s.endedAt))
     val totalSec = s.segments.sumOf { it.durationSec }
@@ -164,6 +172,7 @@ private fun HistoryRow(s: Session) {
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(onClick = onClick)
             .padding(16.dp)
     ) {
         Text(title, style = MaterialTheme.typography.titleMedium)

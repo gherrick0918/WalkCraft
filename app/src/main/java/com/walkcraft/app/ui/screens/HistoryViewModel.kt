@@ -3,7 +3,7 @@ package com.walkcraft.app.ui.screens
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.walkcraft.app.data.history.HistoryCsv
+import com.walkcraft.app.data.export.CsvExporter
 import com.walkcraft.app.data.history.HistoryRepository
 import com.walkcraft.app.domain.model.Session
 import kotlinx.coroutines.flow.SharingStarted
@@ -18,7 +18,7 @@ class HistoryViewModel(app: Application) : AndroidViewModel(app) {
         .map { it.sortedByDescending { s -> s.endedAt } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    suspend fun exportCsv(): String = HistoryCsv.build(repo.allOnce())
+    suspend fun exportCsv(): String = CsvExporter.allSessionsToCsv(repo.getAllSessions())
 
     suspend fun clearAll() = repo.clear()
 }
