@@ -22,9 +22,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,7 +39,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
 import com.walkcraft.app.domain.format.SpeedFmt
 import com.walkcraft.app.domain.format.TimeFmt
 import com.walkcraft.app.domain.metric.Distance
@@ -46,9 +51,21 @@ import java.util.Date
 
 private typealias Session = com.walkcraft.app.domain.model.Session
 
+internal const val SNACKBAR_SAVED_SESSION_ID_KEY = "snackbar_saved_session_id"
+
+internal fun consumeSavedSessionMessage(handle: SavedStateHandle?): String? {
+    val pending = handle?.get<String>(SNACKBAR_SAVED_SESSION_ID_KEY)
+    if (pending != null) {
+        handle.remove<String>(SNACKBAR_SAVED_SESSION_ID_KEY)
+        return "Workout saved"
+    }
+    return null
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(
+    navController: NavController,
     onBack: () -> Unit,
     vm: HistoryViewModel = viewModel()
 ) {
@@ -56,8 +73,19 @@ fun HistoryScreen(
     val scope = rememberCoroutineScope()
     val ctx = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    val previousEntry = navController.previousBackStackEntry
+    val snackbarMessage = remember(previousEntry) {
+        consumeSavedSessionMessage(previousEntry?.savedStateHandle)
+    }
+
+    LaunchedEffect(snackbarMessage) {
+        snackbarMessage?.let { snackbarHostState.showSnackbar(it) }
+    }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("History") },

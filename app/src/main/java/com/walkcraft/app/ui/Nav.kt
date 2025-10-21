@@ -8,6 +8,7 @@ import com.walkcraft.app.ui.screens.DeviceSetupScreen
 import com.walkcraft.app.ui.screens.HistoryScreen
 import com.walkcraft.app.ui.screens.HomeScreen
 import com.walkcraft.app.ui.screens.RunScreen
+import com.walkcraft.app.ui.screens.SNACKBAR_SAVED_SESSION_ID_KEY
 
 object Routes {
     const val HOME = "home"
@@ -35,10 +36,21 @@ fun AppNav() {
             DeviceSetupScreen(onBack = { nav.popBackStack() })
         }
         composable(Routes.RUN) {
-            RunScreen(onBack = { nav.popBackStack() })
+            RunScreen(
+                onBack = { nav.popBackStack() },
+                onFinished = { sessionId ->
+                    nav.currentBackStackEntry
+                        ?.savedStateHandle
+                        ?.set(SNACKBAR_SAVED_SESSION_ID_KEY, sessionId ?: "")
+                    nav.popBackStack(Routes.RUN, inclusive = true)
+                    nav.navigate(Routes.HISTORY) {
+                        launchSingleTop = true
+                    }
+                }
+            )
         }
         composable(Routes.HISTORY) {
-            HistoryScreen(onBack = { nav.popBackStack() })
+            HistoryScreen(navController = nav, onBack = { nav.popBackStack() })
         }
     }
 }
