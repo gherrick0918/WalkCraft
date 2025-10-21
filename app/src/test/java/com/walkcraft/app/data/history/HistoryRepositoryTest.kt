@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.walkcraft.app.domain.model.CompletedSegment
 import com.walkcraft.app.domain.model.Session
 import com.walkcraft.app.domain.model.SpeedUnit
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -27,7 +28,7 @@ class HistoryRepositoryTest {
     @Test
     fun insertIgnore_dropsDuplicateId() = runBlocking {
         val repo = HistoryRepository.from(app)
-        repo.clear()
+        repo.clearAllSessions()
         val first = sampleSession("same-id")
         val duplicate = first.copy(endedAt = first.endedAt + 10_000)
 
@@ -37,6 +38,35 @@ class HistoryRepositoryTest {
         val sessions = repo.allOnce()
         assertEquals(1, sessions.size)
         assertEquals(first, sessions.first())
+    }
+
+    @Test
+    fun deleteSession_removesEntry() = runBlocking {
+        val repo = HistoryRepository.from(app)
+        repo.clearAllSessions()
+        val first = sampleSession("first")
+        val second = sampleSession("second")
+
+        repo.insertIgnore(first)
+        repo.insertIgnore(second)
+
+        repo.deleteSessionById(first.id)
+
+        val sessions = repo.observe().first()
+        assertEquals(listOf(second), sessions)
+    }
+
+    @Test
+    fun clearAllSessions_emptiesRepository() = runBlocking {
+        val repo = HistoryRepository.from(app)
+        repo.clearAllSessions()
+        repo.insertIgnore(sampleSession("one"))
+        repo.insertIgnore(sampleSession("two"))
+
+        repo.clearAllSessions()
+
+        val sessions = repo.allOnce()
+        assertEquals(0, sessions.size)
     }
 
     private fun sampleSession(id: String): Session = Session(

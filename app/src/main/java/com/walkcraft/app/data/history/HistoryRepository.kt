@@ -28,10 +28,19 @@ class HistoryRepository private constructor(
         }
     }
 
-    suspend fun clear() {
+    suspend fun clearAllSessions() {
         lock.withLock {
             sessionMap.clear()
             _sessions.value = emptyList()
+        }
+    }
+
+    suspend fun deleteSessionById(sessionId: String) {
+        lock.withLock {
+            val removed = sessionMap.remove(sessionId)
+            if (removed != null) {
+                _sessions.value = sessionMap.values.toList()
+            }
         }
     }
 
