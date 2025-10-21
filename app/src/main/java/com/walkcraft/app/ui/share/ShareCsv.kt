@@ -1,21 +1,23 @@
 package com.walkcraft.app.ui.share
 
 import android.content.Context
-import androidx.core.content.FileProvider
+import android.content.Intent
 import androidx.core.app.ShareCompat
+import androidx.core.content.FileProvider
 import java.io.File
 
 object ShareCsv {
     fun shareTextAsCsv(context: Context, fileName: String, csv: String, chooserTitle: String) {
-        val dir = File(context.cacheDir, "exports").apply { mkdirs() }
-        val file = File(dir, fileName)
+        val file = File(context.cacheDir, fileName)
+        file.parentFile?.mkdirs()
         file.writeText(csv)
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
 
-        ShareCompat.IntentBuilder(context)
+        val builder = ShareCompat.IntentBuilder(context)
             .setType("text/csv")
             .addStream(uri)
             .setChooserTitle(chooserTitle)
-            .startChooser()
+        builder.intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        builder.startChooser()
     }
 }

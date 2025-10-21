@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -20,6 +21,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -33,7 +35,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.walkcraft.app.data.export.CsvExporter
-import com.walkcraft.app.data.export.idOrHash
+import com.walkcraft.app.data.export.shortId
 import com.walkcraft.app.data.export.workoutDisplayName
 import com.walkcraft.app.data.history.HistoryRepository
 import com.walkcraft.app.domain.format.SpeedFmt
@@ -60,6 +62,7 @@ fun SessionDetailScreen(
     val session by repository.observeSession(sessionId).collectAsState(initial = null)
     val scope = rememberCoroutineScope()
     var menuExpanded by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -82,7 +85,7 @@ fun SessionDetailScreen(
                         onDismissRequest = { menuExpanded = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Share (.csv)") },
+                            text = { Text("Export CSV") },
                             enabled = session != null,
                             onClick = {
                                 menuExpanded = false
@@ -91,14 +94,22 @@ fun SessionDetailScreen(
                                     val csv = withContext(Dispatchers.Default) {
                                         CsvExporter.sessionToCsv(current)
                                     }
-                                    val fileName = "session-${current.idOrHash()}.csv"
+                                    val fileName = "session-${current.shortId()}.csv"
                                     ShareCsv.shareTextAsCsv(
                                         context = context,
                                         fileName = fileName,
                                         csv = csv,
-                                        chooserTitle = "Share session"
+                                        chooserTitle = "Export session"
                                     )
                                 }
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Delete session") },
+                            enabled = session != null,
+                            onClick = {
+                                menuExpanded = false
+                                showDeleteDialog = true
                             }
                         )
                     }
@@ -120,6 +131,33 @@ fun SessionDetailScreen(
                 contentPadding = padding
             )
         }
+    }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    val current = session
+                    showDeleteDialog = false
+                    if (current != null) {
+                        scope.launch {
+                            repository.deleteSessionById(current.id)
+                            onBack()
+                        }
+                    }
+                }) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Cancel")
+                }
+            },
+            title = { Text("Delete session") },
+            text = { Text("Delete this session? This can't be undone.") }
+        )
     }
 }
 
@@ -172,8 +210,10 @@ private fun SessionDetailContent(session: Session, contentPadding: PaddingValues
                     .fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                val label = segment.label?.takeIf { it.isNotBlank() }
+                    ?: "Block ${segment.blockIndex}"
                 Text(
-                    text = "Block ${segment.blockIndex}",
+                    text = label,
                     style = MaterialTheme.typography.bodyMedium
                 )
                 val speedText = SpeedFmt.pretty(segment.actualSpeed, session.unit, null)

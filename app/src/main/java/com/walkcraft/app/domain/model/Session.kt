@@ -3,7 +3,8 @@ package com.walkcraft.app.domain.model
 data class CompletedSegment(
     val blockIndex: Int,
     val actualSpeed: Double,
-    val durationSec: Int
+    val durationSec: Int,
+    val label: String? = null,
 )
 
 data class Session(

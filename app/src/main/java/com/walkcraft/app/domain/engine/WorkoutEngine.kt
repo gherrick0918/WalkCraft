@@ -87,13 +87,15 @@ class WorkoutEngine(
     private fun nextBlock(w: Workout, idx: Int) {
         val prev = (state as? EngineState.Running)
         if (prev != null) {
-            val original = prev.workout.blocks[prev.idx].durationSec
+            val blockMeta = prev.workout.blocks[prev.idx]
+            val original = blockMeta.durationSec
             val remaining = prev.remaining.coerceAtLeast(0)
             val consumed = (original - remaining).coerceIn(0, original)
             segments += CompletedSegment(
                 blockIndex = prev.idx,
                 actualSpeed = prev.speed,
-                durationSec = consumed
+                durationSec = consumed,
+                label = blockMeta.label,
             )
         }
 
@@ -122,7 +124,7 @@ class WorkoutEngine(
                 val block = current.workout.blocks[current.idx]
                 val consumed = (block.durationSec - current.remaining).coerceIn(0, block.durationSec)
                 val partial = if (consumed > 0) {
-                    CompletedSegment(current.idx, current.speed, consumed)
+                    CompletedSegment(current.idx, current.speed, consumed, block.label)
                 } else {
                     null
                 }
@@ -132,7 +134,7 @@ class WorkoutEngine(
                 val block = current.workout.blocks[current.idx]
                 val consumed = (block.durationSec - current.remaining).coerceIn(0, block.durationSec)
                 val partial = if (consumed > 0) {
-                    CompletedSegment(current.idx, current.speed, consumed)
+                    CompletedSegment(current.idx, current.speed, consumed, block.label)
                 } else {
                     null
                 }

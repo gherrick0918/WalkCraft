@@ -7,68 +7,61 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class CsvExporterTest {
+
     @Test
-    fun sessionCsvContainsSummaryAndSegments() {
-        val segments = listOf(
-            CompletedSegment(0, 3.0, 600),
-            CompletedSegment(1, 3.5, 300),
-            CompletedSegment(2, 4.0, 300)
-        )
+    fun sessionCsv_hasHeaderRowsAndFormattedValues() {
         val session = Session(
             id = "session-1",
             workoutId = "workout-1",
-            startedAt = 1_000_000L,
-            endedAt = 1_000_000L + 1_200_000L,
+            startedAt = 1_000L,
+            endedAt = 2_000L,
             unit = SpeedUnit.MPH,
-            segments = segments,
-            notes = "Morning walk",
-            workoutName = "Morning Stroll"
+            segments = listOf(
+                CompletedSegment(blockIndex = 0, actualSpeed = 3.04, durationSec = 600, label = "Warmup"),
+                CompletedSegment(blockIndex = 1, actualSpeed = 4.05, durationSec = 300, label = "Steady"),
+                CompletedSegment(blockIndex = 2, actualSpeed = 3.5, durationSec = 300)
+            ),
+            notes = "Morning walk"
         )
 
         val csv = CsvExporter.sessionToCsv(session)
         val lines = csv.trim().split('\n')
-        assertEquals("Workout,Started At,Ended At,Total Seconds,Unit,Distance", lines[0])
-        val detail = lines[1].split(',')
-        assertEquals("Morning Stroll", detail[0])
-        assertEquals("1200", detail[3])
-        assertEquals("MPH", detail[4])
-        val expectedMiles = segments.sumOf { it.actualSpeed * it.durationSec } / 3600.0
-        assertEquals(expectedMiles, detail[5].toDouble(), 0.01)
 
-        assertEquals("", lines[2])
-        assertEquals("Block,Speed (MPH),Duration (sec)", lines[3])
-        val segmentLines = lines.drop(4)
-        assertEquals(segments.size, segmentLines.size)
-        assertEquals("0,3,600", segmentLines[0])
-        assertEquals("1,3.5,300", segmentLines[1])
-        assertEquals("2,4,300", segmentLines[2])
+        assertEquals("block_index,label,speed,duration_sec,distance", lines.first())
+        assertEquals(session.segments.size + 1, lines.size)
+
+        val firstRow = lines[1].split(',')
+        assertEquals(listOf("0", "Warmup", "3.0", "600", "0.51"), firstRow)
+
+        val lastRow = lines.last().split(',')
+        assertEquals("2", lastRow[0])
+        assertEquals("Block 2", lastRow[1])
+        assertEquals("3.5", lastRow[2])
+        assertEquals("300", lastRow[3])
+        assertEquals("0.29", lastRow[4])
     }
 
     @Test
-    fun allSessionsCsvIncludesSummaryRows() {
-        val segments = listOf(
-            CompletedSegment(0, 3.0, 600),
-            CompletedSegment(1, 3.5, 300)
-        )
+    fun sessionCsv_convertsKphToMilesForDistance() {
         val session = Session(
-            id = "session-2",
+            id = "kph-session",
             workoutId = null,
-            startedAt = 2_000_000L,
-            endedAt = 2_000_000L + 900_000L,
-            unit = SpeedUnit.MPH,
-            segments = segments,
-            notes = null,
-            workoutName = "Evening Walk"
+            startedAt = 0L,
+            endedAt = 1_000L,
+            unit = SpeedUnit.KPH,
+            segments = listOf(
+                CompletedSegment(blockIndex = 0, actualSpeed = 6.2, durationSec = 1_800, label = "Tempo")
+            )
         )
 
-        val csv = CsvExporter.allSessionsToCsv(listOf(session))
+        val csv = CsvExporter.sessionToCsv(session)
         val lines = csv.trim().split('\n')
-        assertEquals("Session Id,Workout,Started At,Ended At,Total Seconds,Unit,Distance", lines[0])
-        val data = lines[1].split(',')
-        assertEquals("session-2", data[0])
-        assertEquals("Evening Walk", data[1])
-        assertEquals("900", data[4])
-        val expectedMiles = segments.sumOf { it.actualSpeed * it.durationSec } / 3600.0
-        assertEquals(expectedMiles, data[6].toDouble(), 0.01)
+        val row = lines[1].split(',')
+
+        assertEquals("Tempo", row[1])
+        assertEquals("6.2", row[2])
+        assertEquals("1800", row[3])
+        // 6.2 kph -> 3.85 mph, half-hour duration = 1.93 miles
+        assertEquals("1.93", row[4])
     }
 }
