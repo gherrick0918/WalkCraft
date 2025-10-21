@@ -10,6 +10,7 @@ import com.walkcraft.app.domain.model.Session
 import com.walkcraft.app.domain.model.SpeedPolicy
 import com.walkcraft.app.domain.model.SteadyBlock
 import com.walkcraft.app.domain.model.Workout
+import java.util.UUID
 
 sealed interface EngineState {
     data class Idle(val workout: Workout?) : EngineState
@@ -36,12 +37,15 @@ class WorkoutEngine(
     private var state: EngineState = EngineState.Idle(null)
     private val segments = mutableListOf<CompletedSegment>()
     private var startedAt: Long = 0L
+    private var sessionId: String? = null
 
     fun current(): EngineState = state
 
     fun start(workout: Workout) {
         require(workout.blocks.isNotEmpty()) { "Workout has no blocks" }
         startedAt = System.currentTimeMillis()
+        sessionId = UUID.randomUUID().toString()
+        segments.clear()
         state = EngineState.Running(
             workout = workout,
             idx = 0,
@@ -94,21 +98,94 @@ class WorkoutEngine(
         }
 
         if (idx >= w.blocks.size) {
-            state = EngineState.Finished(
-                Session(
-                    workoutId = w.id,
-                    startedAt = startedAt,
-                    endedAt = System.currentTimeMillis(),
-                    unit = caps.unit,
-                    segments = segments.toList(),
-                    workoutName = w.name
-                )
+            val session = sessionFrom(
+                workout = w,
+                extraSegment = null,
+                endedAt = System.currentTimeMillis()
             )
+            state = EngineState.Finished(session)
             return
         }
 
         val block = w.blocks[idx]
         state = EngineState.Running(w, idx, block.durationSec, speedFor(block))
+    }
+
+    fun finishNow(): Session {
+        val current = state
+        if (current is EngineState.Finished) {
+            return current.session
+        }
+
+        val session = when (current) {
+            is EngineState.Running -> {
+                val block = current.workout.blocks[current.idx]
+                val consumed = (block.durationSec - current.remaining).coerceIn(0, block.durationSec)
+                val partial = if (consumed > 0) {
+                    CompletedSegment(current.idx, current.speed, consumed)
+                } else {
+                    null
+                }
+                sessionFrom(current.workout, partial, System.currentTimeMillis())
+            }
+            is EngineState.Paused -> {
+                val block = current.workout.blocks[current.idx]
+                val consumed = (block.durationSec - current.remaining).coerceIn(0, block.durationSec)
+                val partial = if (consumed > 0) {
+                    CompletedSegment(current.idx, current.speed, consumed)
+                } else {
+                    null
+                }
+                sessionFrom(current.workout, partial, System.currentTimeMillis())
+            }
+            is EngineState.Idle -> {
+                sessionFrom(
+                    workout = current.workout ?: return Session(
+                        id = ensureSessionId(),
+                        workoutId = null,
+                        startedAt = startedAt.takeIf { it != 0L } ?: System.currentTimeMillis(),
+                        endedAt = System.currentTimeMillis(),
+                        unit = caps.unit,
+                        segments = emptyList(),
+                        workoutName = null
+                    ),
+                    extraSegment = null,
+                    endedAt = System.currentTimeMillis()
+                )
+            }
+            is EngineState.Finished -> current.session
+        }
+
+        state = EngineState.Finished(session)
+        return session
+    }
+
+    fun isStarted(): Boolean = state !is EngineState.Idle
+
+    fun currentSessionId(): String? = sessionId
+
+    private fun ensureSessionId(): String = sessionId ?: UUID.randomUUID().toString().also { sessionId = it }
+
+    private fun sessionFrom(
+        workout: Workout,
+        extraSegment: CompletedSegment?,
+        endedAt: Long
+    ): Session {
+        val completed = buildList {
+            addAll(segments)
+            if (extraSegment != null) add(extraSegment)
+        }
+        val start = startedAt.takeIf { it != 0L } ?: (endedAt - completed.sumOf { it.durationSec } * 1000L)
+        val session = Session(
+            id = ensureSessionId(),
+            workoutId = workout.id,
+            startedAt = start,
+            endedAt = endedAt,
+            unit = caps.unit,
+            segments = completed,
+            workoutName = workout.name
+        )
+        return session
     }
 
     private fun speedFor(b: Block): Double = when (b) {

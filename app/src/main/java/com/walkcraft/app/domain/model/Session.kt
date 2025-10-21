@@ -7,6 +7,7 @@ data class CompletedSegment(
 )
 
 data class Session(
+    val id: String,
     val workoutId: String?,
     val startedAt: Long,
     val endedAt: Long,

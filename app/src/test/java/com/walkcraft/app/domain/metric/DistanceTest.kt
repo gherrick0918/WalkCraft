@@ -10,6 +10,7 @@ class DistanceTest {
     @Test
     fun mphMiles() {
         val s = Session(
+            id = "mph",
             workoutId = "w",
             startedAt = 0L,
             endedAt = 0L,
@@ -26,6 +27,7 @@ class DistanceTest {
     @Test
     fun kphKm() {
         val s = Session(
+            id = "kph",
             workoutId = "w",
             startedAt = 0L,
             endedAt = 0L,

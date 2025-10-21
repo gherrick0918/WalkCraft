@@ -15,15 +15,23 @@ class HistoryRepository private constructor(
 ) {
     private val lock = Mutex()
 
+    private val sessionMap = LinkedHashMap<String, Session>()
     private val _sessions = MutableStateFlow<List<Session>>(emptyList())
     val sessions: StateFlow<List<Session>> = _sessions.asStateFlow()
 
-    suspend fun insert(session: Session) {
-        lock.withLock { _sessions.value = _sessions.value + session }
+    suspend fun insertIgnore(session: Session) {
+        lock.withLock {
+            if (sessionMap.containsKey(session.id)) return
+            sessionMap[session.id] = session
+            _sessions.value = sessionMap.values.toList()
+        }
     }
 
     suspend fun clear() {
-        lock.withLock { _sessions.value = emptyList() }
+        lock.withLock {
+            sessionMap.clear()
+            _sessions.value = emptyList()
+        }
     }
 
     fun observe(): Flow<List<Session>> = sessions

@@ -7,6 +7,7 @@ import android.content.ServiceConnection
 import android.os.IBinder
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.walkcraft.app.domain.engine.EngineState
 import com.walkcraft.app.service.WorkoutService
 import com.walkcraft.app.service.WorkoutService.Companion.ACTION_PAUSE
 import com.walkcraft.app.service.WorkoutService.Companion.ACTION_RESUME
@@ -29,6 +30,9 @@ class RunViewModel @Inject constructor(
     private val _ui = MutableStateFlow<RunUiState>(RunUiState.Idle)
     val ui: StateFlow<RunUiState> = _ui.asStateFlow()
 
+    private val _engineState = MutableStateFlow<EngineState>(EngineState.Idle(null))
+    val engineState: StateFlow<EngineState> = _engineState.asStateFlow()
+
     private var statesJob: Job? = null
     private var bound = false
 
@@ -39,6 +43,7 @@ class RunViewModel @Inject constructor(
             statesJob?.cancel()
             statesJob = viewModelScope.launch {
                 service.states().collect { st ->
+                    _engineState.value = st
                     _ui.value = RunUiState.from(st)
                 }
             }
@@ -49,6 +54,7 @@ class RunViewModel @Inject constructor(
             statesJob = null
             bound = false
             _ui.value = RunUiState.Idle
+            _engineState.value = EngineState.Idle(null)
         }
     }
 
@@ -58,6 +64,7 @@ class RunViewModel @Inject constructor(
         bound = app.bindService(intent, conn, Context.BIND_AUTO_CREATE)
         if (!bound) {
             _ui.value = RunUiState.Idle
+            _engineState.value = EngineState.Idle(null)
         }
     }
 
