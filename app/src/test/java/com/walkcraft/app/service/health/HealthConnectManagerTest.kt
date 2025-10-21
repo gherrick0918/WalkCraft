@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentSender
 import androidx.health.connect.client.HealthConnectClient
-import androidx.health.connect.client.permissions.HealthPermission
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
@@ -66,7 +65,7 @@ class HealthConnectManagerTest {
     }
 
     private class FakeHealthClientFacade(context: Context) : HealthClientFacade {
-        var granted: Set<HealthPermission> = emptySet()
+        var granted: Set<String> = emptySet()
         var summary: HealthSummary = HealthSummary()
         private val intentSender: IntentSender = PendingIntent.getActivity(
             context,
@@ -75,9 +74,9 @@ class HealthConnectManagerTest {
             PendingIntent.FLAG_IMMUTABLE
         ).intentSender
 
-        override suspend fun grantedPermissions(): Set<HealthPermission> = granted
+        override suspend fun grantedPermissions(): Set<String> = granted
 
-        override suspend fun createPermissionRequestIntent(permissions: Set<HealthPermission>) = intentSender
+        override suspend fun createPermissionRequestIntent(permissions: Set<String>) = intentSender
 
         override suspend fun readSummary(start: Instant, end: Instant): HealthSummary = summary
     }

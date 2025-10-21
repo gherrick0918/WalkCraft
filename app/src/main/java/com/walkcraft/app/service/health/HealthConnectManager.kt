@@ -5,7 +5,6 @@ import android.content.Intent
 import android.content.IntentSender
 import android.net.Uri
 import androidx.health.connect.client.HealthConnectClient
-import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.request.AggregateRequest
@@ -28,19 +27,19 @@ data class HealthSummary(
 )
 
 interface HealthClientFacade {
-    suspend fun grantedPermissions(): Set<HealthPermission>
-    suspend fun createPermissionRequestIntent(permissions: Set<HealthPermission>): IntentSender
+    suspend fun grantedPermissions(): Set<String>
+    suspend fun createPermissionRequestIntent(permissions: Set<String>): IntentSender
     suspend fun readSummary(start: Instant, end: Instant): HealthSummary
 }
 
 private class RealHealthClientFacade(
     private val client: HealthConnectClient,
 ) : HealthClientFacade {
-    override suspend fun grantedPermissions(): Set<HealthPermission> =
+    override suspend fun grantedPermissions(): Set<String> =
         client.permissionController.getGrantedPermissions()
 
-    override suspend fun createPermissionRequestIntent(permissions: Set<HealthPermission>): IntentSender =
-        client.permissionController.createRequestPermissionIntent(permissions)
+    override suspend fun createPermissionRequestIntent(permissions: Set<String>): IntentSender =
+        client.permissionController.createPermissionRequestIntent(permissions)
 
     override suspend fun readSummary(start: Instant, end: Instant): HealthSummary {
         val request = AggregateRequest(
@@ -51,13 +50,15 @@ private class RealHealthClientFacade(
             timeRangeFilter = TimeRangeFilter.between(start, end),
         )
         val response = client.aggregate(request)
-        val steps = response[StepsRecord.COUNT_TOTAL]?.toInt()
-        val bpm = response[HeartRateRecord.BPM_AVG]?.roundToInt()
+        val steps = (response[StepsRecord.COUNT_TOTAL] as? Number)?.toInt()
+        val bpm = (response[HeartRateRecord.BPM_AVG] as? Number)?.toDouble()?.roundToInt()
         return HealthSummary(averageHeartRateBpm = bpm, totalSteps = steps)
     }
 }
 
 private const val HEALTH_CONNECT_PACKAGE_NAME = "com.google.android.apps.healthdata"
+private const val PERMISSION_READ_STEPS = "androidx.health.permission.READ_STEPS"
+private const val PERMISSION_READ_HEART_RATE = "androidx.health.permission.READ_HEART_RATE"
 
 class HealthConnectManager(
     private val context: Context,
@@ -71,9 +72,9 @@ class HealthConnectManager(
     },
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
-    val requiredPermissions: Set<HealthPermission> = setOf(
-        HealthPermission.createReadPermission(StepsRecord::class),
-        HealthPermission.createReadPermission(HeartRateRecord::class),
+    val requiredPermissions: Set<String> = setOf(
+        PERMISSION_READ_STEPS,
+        PERMISSION_READ_HEART_RATE,
     )
 
     suspend fun availability(): HealthConnectAvailability = withContext(ioDispatcher) {
