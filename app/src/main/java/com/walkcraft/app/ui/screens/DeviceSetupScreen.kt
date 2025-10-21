@@ -1,14 +1,21 @@
 package com.walkcraft.app.ui.screens
 
+import android.app.Activity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions // <-- FIX: Add this missing import
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -30,9 +37,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.walkcraft.app.data.prefs.DevicePrefsRepository
 import com.walkcraft.app.data.prefs.DeviceSettings
+import com.walkcraft.app.data.prefs.UserPrefsRepository
 import com.walkcraft.app.domain.model.DeviceCapabilities
 import com.walkcraft.app.domain.model.SpeedPolicy
 import com.walkcraft.app.domain.model.SpeedUnit
+import com.walkcraft.app.service.health.HealthConnectAvailability
+import com.walkcraft.app.service.health.HealthConnectManager
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -40,10 +50,30 @@ import kotlinx.coroutines.launch
 fun DeviceSetupScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
     val repo = remember { DevicePrefsRepository.from(ctx) }
+    val userPrefs = remember { UserPrefsRepository.from(ctx) }
+    val healthManager = remember { HealthConnectManager(ctx) }
     val scope = rememberCoroutineScope()
     val snack = remember { SnackbarHostState() }
 
     val settings by repo.settingsFlow.collectAsState(initial = null)
+    val healthEnabled by userPrefs.healthConnectEnabledFlow.collectAsState(initial = false)
+    var healthAvailability by remember { mutableStateOf<HealthConnectAvailability?>(null) }
+    var permissionsGranted by remember { mutableStateOf(false) }
+
+    val permissionLauncher = rememberLauncherForActivityResult(StartIntentSenderForResult()) { result ->
+        scope.launch {
+            val granted = healthManager.hasPermissions()
+            permissionsGranted = granted
+            if (granted) {
+                userPrefs.setHealthConnectEnabled(true)
+                snack.showSnackbar("Health Connect connected")
+                refreshHealthStatus()
+            } else if (result.resultCode == Activity.RESULT_CANCELED) {
+                snack.showSnackbar("Permissions were not granted")
+                refreshHealthStatus()
+            }
+        }
+    }
 
     var unit by remember { mutableStateOf(SpeedUnit.MPH) }
     var mode by remember { mutableStateOf(DeviceCapabilities.Mode.DISCRETE) }
@@ -70,6 +100,20 @@ fun DeviceSetupScreen(onBack: () -> Unit) {
         }
     }
 
+    suspend fun refreshHealthStatus() {
+        val availability = healthManager.availability()
+        healthAvailability = availability
+        permissionsGranted = if (healthEnabled && availability == HealthConnectAvailability.Installed) {
+            healthManager.hasPermissions()
+        } else {
+            false
+        }
+    }
+
+    LaunchedEffect(healthEnabled) {
+        refreshHealthStatus()
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -84,6 +128,52 @@ fun DeviceSetupScreen(onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text("Configure unit and your pad’s speeds. Saved to device (DataStore).")
+
+            Spacer(Modifier.height(8.dp))
+            HealthConnectRow(
+                availability = healthAvailability,
+                enabled = healthEnabled,
+                permissionsGranted = permissionsGranted,
+                onConnect = {
+                    scope.launch {
+                        val availability = healthAvailability ?: healthManager.availability()
+                        healthAvailability = availability
+                        when (availability) {
+                            HealthConnectAvailability.NotSupported -> {
+                                snack.showSnackbar("Health Connect is not supported on this device")
+                            }
+                            HealthConnectAvailability.NeedsInstall -> {
+                                runCatching { ctx.startActivity(healthManager.installAppIntent()) }
+                            }
+                            HealthConnectAvailability.Installed -> {
+                                val granted = healthManager.hasPermissions()
+                                if (granted) {
+                                    userPrefs.setHealthConnectEnabled(true)
+                                    permissionsGranted = true
+                                    snack.showSnackbar("Health Connect enabled")
+                                } else {
+                                    val intent = healthManager.permissionRequestIntent()
+                                    if (intent != null) {
+                                        permissionLauncher.launch(
+                                            IntentSenderRequest.Builder(intent).build()
+                                        )
+                                    } else {
+                                        snack.showSnackbar("Unable to request permissions")
+                                    }
+                                }
+                            }
+                            null -> Unit
+                        }
+                    }
+                },
+                onDisable = {
+                    scope.launch {
+                        userPrefs.setHealthConnectEnabled(false)
+                        permissionsGranted = false
+                        snack.showSnackbar("Health Connect disabled")
+                    }
+                }
+            )
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = unit == SpeedUnit.MPH, onClick = { unit = SpeedUnit.MPH }, label = { Text("MPH") })
@@ -177,6 +267,51 @@ fun DeviceSetupScreen(onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Save")
+            }
+        }
+    }
+}
+
+@Composable
+private fun HealthConnectRow(
+    availability: HealthConnectAvailability?,
+    enabled: Boolean,
+    permissionsGranted: Boolean,
+    onConnect: () -> Unit,
+    onDisable: () -> Unit,
+) {
+    val status = when (availability) {
+        null -> "Checking…"
+        HealthConnectAvailability.NotSupported -> "Not supported on this device"
+        HealthConnectAvailability.NeedsInstall -> "App not installed"
+        HealthConnectAvailability.Installed -> when {
+            enabled && permissionsGranted -> "Connected"
+            enabled -> "Permissions required"
+            else -> "Available"
+        }
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("Health Connect", style = MaterialTheme.typography.titleMedium)
+            Text(status, style = MaterialTheme.typography.bodySmall)
+        }
+        when (availability) {
+            HealthConnectAvailability.Installed -> {
+                if (enabled && permissionsGranted) {
+                    TextButton(onClick = onDisable) { Text("Disable") }
+                } else {
+                    Button(onClick = onConnect) { Text(if (enabled) "Retry" else "Connect") }
+                }
+            }
+            HealthConnectAvailability.NeedsInstall -> {
+                Button(onClick = onConnect) { Text("Install") }
+            }
+            HealthConnectAvailability.NotSupported, null -> {
+                // No action available.
             }
         }
     }
