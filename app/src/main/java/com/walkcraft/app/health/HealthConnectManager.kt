@@ -37,8 +37,10 @@ private class RealHealthClientFacade(
 ) : HealthClientFacade {
     private val permissionController get() = client.permissionController
 
-    override suspend fun grantedPermissions(): Set<HealthPermission> =
-        permissionController.getGrantedPermissions()
+    override suspend fun grantedPermissions(): Set<HealthPermission> {
+        // Explicitly specify the type of 'it' as a String.
+        return permissionController.getGrantedPermissions().map { it: String -> HealthPermission.create(it) }.toSet()
+    }
 
     override suspend fun createPermissionRequestIntent(permissions: Set<HealthPermission>): Intent =
         permissionController.createRequestPermissionIntent(permissions)
