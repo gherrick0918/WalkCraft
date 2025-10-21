@@ -26,6 +26,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -47,6 +48,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.DateFormat
+import java.text.NumberFormat
 import java.util.Date
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -167,6 +169,7 @@ private fun SessionDetailContent(session: Session, contentPadding: PaddingValues
     val distanceText = Distance.pretty(distance) + " " + Distance.label(session.unit)
     val totalSeconds = ((session.endedAt - session.startedAt) / 1000L).toInt().coerceAtLeast(0)
     val durationText = TimeFmt.hMmSs(totalSeconds)
+    val numberFormat = remember { NumberFormat.getIntegerInstance() }
 
     LazyColumn(
         modifier = Modifier
@@ -195,6 +198,18 @@ private fun SessionDetailContent(session: Session, contentPadding: PaddingValues
                     text = "Distance: $distanceText",
                     style = MaterialTheme.typography.bodyMedium
                 )
+                session.avgHr?.let { avg ->
+                    Text(
+                        text = "Average HR: $avg bpm",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                session.totalSteps?.let { steps ->
+                    Text(
+                        text = "Steps: ${numberFormat.format(steps)}",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
             }
         }
         item {

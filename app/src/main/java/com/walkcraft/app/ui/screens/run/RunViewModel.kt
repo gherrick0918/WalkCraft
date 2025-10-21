@@ -20,6 +20,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 @HiltViewModel
@@ -42,9 +43,11 @@ class RunViewModel @Inject constructor(
             val service = local.service()
             statesJob?.cancel()
             statesJob = viewModelScope.launch {
-                service.states().collect { st ->
+                combine(service.states(), service.healthTelemetry()) { st, health ->
+                    st to health
+                }.collect { (st, health) ->
                     _engineState.value = st
-                    _ui.value = RunUiState.from(st)
+                    _ui.value = RunUiState.from(st, health)
                 }
             }
         }

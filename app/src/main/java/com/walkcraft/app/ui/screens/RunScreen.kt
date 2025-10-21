@@ -13,6 +13,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -29,6 +30,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.walkcraft.app.domain.engine.EngineState
 import com.walkcraft.app.ui.screens.run.RunUiState
 import com.walkcraft.app.ui.screens.run.RunViewModel
+import com.walkcraft.app.ui.screens.run.RunHealth
+import java.text.NumberFormat
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,6 +96,7 @@ private fun RunningPanel(state: RunUiState.Running, vm: RunViewModel) {
         Text(state.blockLabel, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
         Text(state.remaining, style = MaterialTheme.typography.displayLarge, textAlign = TextAlign.Center)
         Text(state.speedText, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+        HealthTelemetryBadge(state.health)
         state.nextLabel?.let { next ->
             Text("Next: $next", style = MaterialTheme.typography.bodyMedium)
         }
@@ -109,6 +113,7 @@ private fun PausedPanel(state: RunUiState.Paused, vm: RunViewModel) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(state.blockLabel, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
         Text(state.remaining, style = MaterialTheme.typography.displayLarge, textAlign = TextAlign.Center)
+        HealthTelemetryBadge(state.health)
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(onClick = vm::resume) { Text("Resume") }
             Button(onClick = vm::stop) { Text("Stop") }
@@ -122,5 +127,42 @@ private fun FinishedPanel(state: RunUiState.Finished, vm: RunViewModel) {
         Text("Workout complete", style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
         Text(state.summary, style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center)
         Button(onClick = vm::stop) { Text("Done") }
+    }
+}
+
+@Composable
+private fun HealthTelemetryBadge(health: RunHealth) {
+    when (health) {
+        RunHealth.Inactive -> Unit
+        RunHealth.PermissionsNeeded -> {
+            Text(
+                text = "Allow Health Connect to see live heart rate and steps",
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+        }
+        is RunHealth.Active -> {
+            val parts = buildList {
+                health.heartRateBpm?.let { add("HR — $it bpm") }
+                health.steps?.let {
+                    add("Steps — ${NumberFormat.getIntegerInstance().format(it)}")
+                }
+            }
+            if (parts.isNotEmpty()) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    shape = MaterialTheme.shapes.small,
+                ) {
+                    Text(
+                        text = parts.joinToString(" • "),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                    )
+                }
+            }
+        }
     }
 }
