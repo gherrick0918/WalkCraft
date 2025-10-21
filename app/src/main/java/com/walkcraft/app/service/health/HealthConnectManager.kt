@@ -9,6 +9,7 @@ import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.time.TimeRangeFilter
+import androidx.health.connect.client.permission.HealthPermission
 import java.time.Instant
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -27,19 +28,19 @@ data class HealthSummary(
 )
 
 interface HealthClientFacade {
-    suspend fun grantedPermissions(): Set<String>
-    suspend fun createPermissionRequestIntent(permissions: Set<String>): IntentSender
+    suspend fun grantedPermissions(): Set<HealthPermission>
+    suspend fun createPermissionRequestIntent(permissions: Set<HealthPermission>): IntentSender
     suspend fun readSummary(start: Instant, end: Instant): HealthSummary
 }
 
 private class RealHealthClientFacade(
     private val client: HealthConnectClient,
 ) : HealthClientFacade {
-    override suspend fun grantedPermissions(): Set<String> =
+    override suspend fun grantedPermissions(): Set<HealthPermission> =
         client.permissionController.getGrantedPermissions()
 
-    override suspend fun createPermissionRequestIntent(permissions: Set<String>): IntentSender =
-        client.permissionController.createPermissionRequestIntent(permissions)
+    override suspend fun createPermissionRequestIntent(permissions: Set<HealthPermission>): IntentSender =
+        client.permissionController.createRequestPermissionActivityIntent(permissions)
 
     override suspend fun readSummary(start: Instant, end: Instant): HealthSummary {
         val request = AggregateRequest(
@@ -57,9 +58,6 @@ private class RealHealthClientFacade(
 }
 
 private const val HEALTH_CONNECT_PACKAGE_NAME = "com.google.android.apps.healthdata"
-private const val PERMISSION_READ_STEPS = "androidx.health.permission.READ_STEPS"
-private const val PERMISSION_READ_HEART_RATE = "androidx.health.permission.READ_HEART_RATE"
-
 class HealthConnectManager(
     private val context: Context,
     private val sdkStatusProvider: (Context) -> Int = { ctx ->
@@ -72,9 +70,9 @@ class HealthConnectManager(
     },
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
-    val requiredPermissions: Set<String> = setOf(
-        PERMISSION_READ_STEPS,
-        PERMISSION_READ_HEART_RATE,
+    val requiredPermissions: Set<HealthPermission> = setOf(
+        HealthPermission.createReadPermission(StepsRecord::class),
+        HealthPermission.createReadPermission(HeartRateRecord::class),
     )
 
     suspend fun availability(): HealthConnectAvailability = withContext(ioDispatcher) {
