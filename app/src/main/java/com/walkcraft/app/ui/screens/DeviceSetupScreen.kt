@@ -1,9 +1,8 @@
 package com.walkcraft.app.ui.screens
 
-import android.app.Activity
+import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.IntentSenderRequest
-import androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,6 +12,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions // <-- FIX: Add this missing import
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -33,56 +34,35 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.walkcraft.app.data.prefs.DevicePrefsRepository
 import com.walkcraft.app.data.prefs.DeviceSettings
-import com.walkcraft.app.data.prefs.UserPrefsRepository
 import com.walkcraft.app.domain.model.DeviceCapabilities
 import com.walkcraft.app.domain.model.SpeedPolicy
 import com.walkcraft.app.domain.model.SpeedUnit
-import com.walkcraft.app.service.health.HealthConnectAvailability
-import com.walkcraft.app.service.health.HealthConnectManager
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.walkcraft.app.ui.viewmodel.DeviceSetupViewModel
+import com.walkcraft.app.ui.viewmodel.HealthUiState
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DeviceSetupScreen(onBack: () -> Unit) {
+fun DeviceSetupScreen(
+    onBack: () -> Unit,
+    vm: DeviceSetupViewModel = hiltViewModel()
+) {
     val ctx = LocalContext.current
     val repo = remember { DevicePrefsRepository.from(ctx) }
-    val userPrefs = remember { UserPrefsRepository.from(ctx) }
-    val healthManager = remember { HealthConnectManager(ctx) }
     val scope = rememberCoroutineScope()
     val snack = remember { SnackbarHostState() }
 
     val settings by repo.settingsFlow.collectAsState(initial = null)
-    val healthEnabled by userPrefs.healthConnectEnabledFlow.collectAsState(initial = false)
-    var healthAvailability by remember { mutableStateOf<HealthConnectAvailability?>(null) }
-    var permissionsGranted by remember { mutableStateOf(false) }
+    val health by vm.health.collectAsState()
 
-    val refreshHealthStatus: suspend () -> Unit = {
-        val availability = healthManager.availability()
-        healthAvailability = availability
-        permissionsGranted = if (healthEnabled && availability == HealthConnectAvailability.Installed) {
-            healthManager.hasPermissions()
-        } else {
-            false
-        }
-    }
-
-    val permissionLauncher = rememberLauncherForActivityResult(StartIntentSenderForResult()) { result ->
-        scope.launch {
-            val granted = healthManager.hasPermissions()
-            permissionsGranted = granted
-            if (granted) {
-                userPrefs.setHealthConnectEnabled(true)
-                snack.showSnackbar("Health Connect connected")
-                refreshHealthStatus()
-            } else if (result.resultCode == Activity.RESULT_CANCELED) {
-                snack.showSnackbar("Permissions were not granted")
-                refreshHealthStatus()
-            }
-        }
+    LaunchedEffect(Unit) {
+        vm.refreshHealthState()
     }
 
     var unit by remember { mutableStateOf(SpeedUnit.MPH) }
@@ -110,10 +90,6 @@ fun DeviceSetupScreen(onBack: () -> Unit) {
         }
     }
 
-    LaunchedEffect(healthEnabled) {
-        refreshHealthStatus()
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
@@ -130,49 +106,10 @@ fun DeviceSetupScreen(onBack: () -> Unit) {
             Text("Configure unit and your pad’s speeds. Saved to device (DataStore).")
 
             Spacer(Modifier.height(8.dp))
-            HealthConnectRow(
-                availability = healthAvailability,
-                enabled = healthEnabled,
-                permissionsGranted = permissionsGranted,
-                onConnect = {
-                    scope.launch {
-                        val availability = healthAvailability ?: healthManager.availability()
-                        healthAvailability = availability
-                        when (availability) {
-                            HealthConnectAvailability.NotSupported -> {
-                                snack.showSnackbar("Health Connect is not supported on this device")
-                            }
-                            HealthConnectAvailability.NeedsInstall -> {
-                                runCatching { ctx.startActivity(healthManager.installAppIntent()) }
-                            }
-                            HealthConnectAvailability.Installed -> {
-                                val granted = healthManager.hasPermissions()
-                                if (granted) {
-                                    userPrefs.setHealthConnectEnabled(true)
-                                    permissionsGranted = true
-                                    snack.showSnackbar("Health Connect enabled")
-                                } else {
-                                    val intent = healthManager.permissionRequestIntent()
-                                    if (intent != null) {
-                                        permissionLauncher.launch(
-                                            IntentSenderRequest.Builder(intent).build()
-                                        )
-                                    } else {
-                                        snack.showSnackbar("Unable to request permissions")
-                                    }
-                                }
-                            }
-                            null -> Unit
-                        }
-                    }
-                },
-                onDisable = {
-                    scope.launch {
-                        userPrefs.setHealthConnectEnabled(false)
-                        permissionsGranted = false
-                        snack.showSnackbar("Health Connect disabled")
-                    }
-                }
+            HealthConnectSection(
+                healthState = health,
+                onGrant = { vm.buildHealthPermissionIntent() },
+                onRefresh = vm::refreshHealthState
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -273,45 +210,64 @@ fun DeviceSetupScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun HealthConnectRow(
-    availability: HealthConnectAvailability?,
-    enabled: Boolean,
-    permissionsGranted: Boolean,
-    onConnect: () -> Unit,
-    onDisable: () -> Unit,
+private fun HealthConnectSection(
+    healthState: HealthUiState,
+    onGrant: suspend () -> Intent,
+    onRefresh: () -> Unit
 ) {
-    val status = when (availability) {
-        null -> "Checking…"
-        HealthConnectAvailability.NotSupported -> "Not supported on this device"
-        HealthConnectAvailability.NeedsInstall -> "App not installed"
-        HealthConnectAvailability.Installed -> when {
-            enabled && permissionsGranted -> "Connected"
-            enabled -> "Permissions required"
-            else -> "Available"
-        }
+    val scope = rememberCoroutineScope()
+    val launcher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        onRefresh()
     }
 
-    Row(
+    Card(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
+        colors = CardDefaults.cardColors()
     ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(Modifier.padding(16.dp)) {
             Text("Health Connect", style = MaterialTheme.typography.titleMedium)
-            Text(status, style = MaterialTheme.typography.bodySmall)
-        }
-        when (availability) {
-            HealthConnectAvailability.Installed -> {
-                if (enabled && permissionsGranted) {
-                    TextButton(onClick = onDisable) { Text("Disable") }
-                } else {
-                    Button(onClick = onConnect) { Text(if (enabled) "Retry" else "Connect") }
+            Spacer(Modifier.height(8.dp))
+
+            when {
+                healthState.checking -> {
+                    Text(
+                        "Checking permissions…",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-            }
-            HealthConnectAvailability.NeedsInstall -> {
-                Button(onClick = onConnect) { Text("Install") }
-            }
-            HealthConnectAvailability.NotSupported, null -> {
-                // No action available.
+                !healthState.available -> {
+                    Text(
+                        "Not installed on this device.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                healthState.granted -> {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Granted")
+                        TextButton(onClick = onRefresh) { Text("Re-check") }
+                    }
+                }
+                else -> {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Permission required")
+                        Button(onClick = {
+                            scope.launch {
+                                val intent = onGrant()
+                                launcher.launch(intent)
+                            }
+                        }) { Text("Grant") }
+                    }
+                }
             }
         }
     }

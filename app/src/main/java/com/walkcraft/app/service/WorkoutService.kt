@@ -38,9 +38,9 @@ import com.walkcraft.app.domain.model.SteadyBlock
 import com.walkcraft.app.domain.model.Workout
 import com.walkcraft.app.domain.model.SpeedUnit
 import com.walkcraft.app.domain.plan.Plans
-import com.walkcraft.app.service.health.HealthConnectAvailability
-import com.walkcraft.app.service.health.HealthConnectManager
-import com.walkcraft.app.service.health.HealthSummary
+import com.walkcraft.app.health.HealthConnectAvailability
+import com.walkcraft.app.health.HealthConnectManager
+import com.walkcraft.app.health.HealthSummary
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -677,7 +677,7 @@ class WorkoutService : Service() {
                 healthTelemetryState.value = HealthTelemetry.Inactive
                 return@launch
             }
-            val hasPermissions = healthManager.hasPermissions()
+            val hasPermissions = healthManager.hasAllPermissions()
             if (!hasPermissions) {
                 healthTelemetryState.value = HealthTelemetry.PermissionsNeeded
                 return@launch
@@ -725,7 +725,7 @@ class WorkoutService : Service() {
                 healthTelemetryState.value = HealthTelemetry.Inactive
                 return@launch
             }
-            val hasPermissions = healthManager.hasPermissions()
+            val hasPermissions = healthManager.hasAllPermissions()
             healthTelemetryState.value = if (hasPermissions) {
                 HealthTelemetry.Inactive
             } else {
@@ -744,7 +744,7 @@ class WorkoutService : Service() {
             healthTelemetryState.value = HealthTelemetry.Inactive
             return
         }
-        val hasPermissions = healthManager.hasPermissions()
+        val hasPermissions = healthManager.hasAllPermissions()
         if (!hasPermissions) {
             healthTelemetryState.value = HealthTelemetry.PermissionsNeeded
         } else if (healthJob == null) {
