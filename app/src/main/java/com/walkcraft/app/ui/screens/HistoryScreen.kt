@@ -158,13 +158,13 @@ fun HistoryScreen(
 }
 
 @Composable
-private fun HistoryRow(s: Session, onClick: () -> Unit) {
-    val title = s.workoutName
-        ?: DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(s.endedAt))
-    val totalSec = s.segments.sumOf { it.durationSec }
+private fun HistoryRow(session: Session, onClick: () -> Unit) {
+    val title = session.workoutName
+        ?: DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(session.endedAt))
+    val totalSec = session.segments.sumOf { it.durationSec }
     val dur = TimeFmt.hMmSs(totalSec)
-    val dist = Distance.of(s)
-    val distText = Distance.pretty(dist) + " " + Distance.label(s.unit)
+    val dist = Distance.of(session)
+    val distText = Distance.pretty(dist) + " " + Distance.label(session.unit)
 
     Column(
         Modifier
@@ -179,9 +179,9 @@ private fun HistoryRow(s: Session, onClick: () -> Unit) {
         Spacer(Modifier.height(6.dp))
         Text("$dur • $distText", style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(6.dp))
-        s.segments.take(6).forEach { seg ->
+        session.segments.take(6).forEach { seg ->
             val segDur = TimeFmt.mmSs(seg.durationSec)
-            val speedText = SpeedFmt.pretty(seg.actualSpeed, s.unit, null)
+            val speedText = SpeedFmt.pretty(seg.actualSpeed, session.unit, null)
             Text("Block ${seg.blockIndex}: $speedText @ $segDur", style = MaterialTheme.typography.bodySmall)
         }
     }
