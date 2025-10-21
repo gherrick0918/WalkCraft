@@ -28,7 +28,7 @@ interface SessionDao {
     suspend fun insert(entity: SessionEntity)
 }
 
-@Database(entities = [SessionEntity::class], version = 2)
+@Database(entities = [SessionEntity::class], version = 2, exportSchema = false)
 abstract class SessionDatabase : RoomDatabase() {
     abstract fun sessionDao(): SessionDao
 
