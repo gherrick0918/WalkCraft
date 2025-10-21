@@ -27,7 +27,8 @@ data class HealthSummary(
 )
 
 private interface HealthClientFacade {
-    suspend fun grantedPermissions(): Set<HealthPermission>
+    // UPDATED: This now takes a set of permissions as a parameter
+    suspend fun getGrantedPermissions(permissions: Set<HealthPermission>): Set<String>
     suspend fun createPermissionRequestIntent(permissions: Set<HealthPermission>): Intent
     suspend fun readSummary(start: Instant, end: Instant): HealthSummary
 }
@@ -37,9 +38,11 @@ private class RealHealthClientFacade(
 ) : HealthClientFacade {
     private val permissionController get() = client.permissionController
 
-    override suspend fun grantedPermissions(): Set<HealthPermission> {
-        // Explicitly specify the type of 'it' as a String.
-        return permissionController.getGrantedPermissions().map { it: String -> HealthPermission.create(it) }.toSet()
+    // UPDATED: This method now accepts the permissions to check
+    override suspend fun getGrantedPermissions(permissions: Set<HealthPermission>): Set<String> {
+        // The getGrantedPermissions method from the library takes a set of permissions
+        // and returns a set of strings representing the granted permissions.
+        return permissionController.getGrantedPermissions(permissions)
     }
 
     override suspend fun createPermissionRequestIntent(permissions: Set<HealthPermission>): Intent =
@@ -86,8 +89,13 @@ class HealthConnectManager(
     /** Check whether all required permissions are already granted. */
     suspend fun hasAllPermissions(): Boolean = withContext(ioDispatcher) {
         val client = clientProvider() ?: return@withContext false
-        val granted = runCatching { client.grantedPermissions() }.getOrElse { emptySet() }
-        requiredPermissions.all { it in granted }
+        // UPDATED: Pass the required permissions to the function and check the result
+        val grantedPermissions = runCatching {
+            client.getGrantedPermissions(requiredPermissions)
+        }.getOrElse { emptySet() }
+        // The API returns strings, so we convert our required permissions to strings for comparison.
+        val requiredPermissionStrings = requiredPermissions.map { it.toString() }
+        return@withContext grantedPermissions.containsAll(requiredPermissionStrings)
     }
 
     /** Build an Intent to request our permissions via Activity Result. */
