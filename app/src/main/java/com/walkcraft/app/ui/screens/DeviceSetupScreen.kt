@@ -60,6 +60,16 @@ fun DeviceSetupScreen(onBack: () -> Unit) {
     var healthAvailability by remember { mutableStateOf<HealthConnectAvailability?>(null) }
     var permissionsGranted by remember { mutableStateOf(false) }
 
+    val refreshHealthStatus: suspend () -> Unit = {
+        val availability = healthManager.availability()
+        healthAvailability = availability
+        permissionsGranted = if (healthEnabled && availability == HealthConnectAvailability.Installed) {
+            healthManager.hasPermissions()
+        } else {
+            false
+        }
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(StartIntentSenderForResult()) { result ->
         scope.launch {
             val granted = healthManager.hasPermissions()
@@ -97,16 +107,6 @@ fun DeviceSetupScreen(onBack: () -> Unit) {
                 }
             }
             strategy = s.policy.strategy
-        }
-    }
-
-    suspend fun refreshHealthStatus() {
-        val availability = healthManager.availability()
-        healthAvailability = availability
-        permissionsGranted = if (healthEnabled && availability == HealthConnectAvailability.Installed) {
-            healthManager.hasPermissions()
-        } else {
-            false
         }
     }
 

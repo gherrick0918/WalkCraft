@@ -5,7 +5,7 @@ import android.content.Intent
 import android.content.IntentSender
 import android.net.Uri
 import androidx.health.connect.client.HealthConnectClient
-import androidx.health.connect.client.permissions.HealthPermission
+import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.request.AggregateRequest
@@ -57,10 +57,12 @@ private class RealHealthClientFacade(
     }
 }
 
+private const val HEALTH_CONNECT_PACKAGE_NAME = "com.google.android.apps.healthdata"
+
 class HealthConnectManager(
     private val context: Context,
     private val sdkStatusProvider: (Context) -> Int = { ctx ->
-        HealthConnectClient.getSdkStatus(ctx, HealthConnectClient.DEFAULT_PROVIDER_PACKAGE_NAME)
+        HealthConnectClient.getSdkStatus(ctx, HEALTH_CONNECT_PACKAGE_NAME)
     },
     private val clientProvider: () -> HealthClientFacade? = {
         runCatching { HealthConnectClient.getOrCreate(context) }
@@ -75,11 +77,11 @@ class HealthConnectManager(
     )
 
     suspend fun availability(): HealthConnectAvailability = withContext(ioDispatcher) {
-        when (sdkStatusProvider(context)) {
+        when (val status = sdkStatusProvider(context)) {
             HealthConnectClient.SDK_AVAILABLE -> HealthConnectAvailability.Installed
-            HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED,
-            HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_NOT_INSTALLED -> HealthConnectAvailability.NeedsInstall
-            else -> HealthConnectAvailability.NotSupported
+            HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> HealthConnectAvailability.NeedsInstall
+            HealthConnectClient.SDK_UNAVAILABLE -> HealthConnectAvailability.NotSupported
+            else -> HealthConnectAvailability.NeedsInstall
         }
     }
 
@@ -100,7 +102,7 @@ class HealthConnectManager(
     }
 
     fun installAppIntent(): Intent {
-        val marketUri = Uri.parse("market://details?id=${HealthConnectClient.DEFAULT_PROVIDER_PACKAGE_NAME}")
+        val marketUri = Uri.parse("market://details?id=$HEALTH_CONNECT_PACKAGE_NAME")
         val marketIntent = Intent(Intent.ACTION_VIEW, marketUri)
         val pm = context.packageManager
         return if (marketIntent.resolveActivity(pm) != null) {
@@ -108,7 +110,7 @@ class HealthConnectManager(
         } else {
             Intent(
                 Intent.ACTION_VIEW,
-                Uri.parse("https://play.google.com/store/apps/details?id=${HealthConnectClient.DEFAULT_PROVIDER_PACKAGE_NAME}")
+                Uri.parse("https://play.google.com/store/apps/details?id=$HEALTH_CONNECT_PACKAGE_NAME")
             )
         }.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
