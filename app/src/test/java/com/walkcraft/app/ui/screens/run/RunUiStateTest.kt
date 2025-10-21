@@ -51,6 +51,7 @@ class RunUiStateTest {
     @Test
     fun finishedStateAggregatesDuration() {
         val session = Session(
+            id = "session-1",
             workoutId = "w3",
             startedAt = 0L,
             endedAt = 0L,

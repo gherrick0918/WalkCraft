@@ -113,7 +113,7 @@ fun HistoryScreen(
                     .fillMaxSize()
                     .padding(padding)
             ) {
-                items(items) { session ->
+                items(items, key = { it.id }) { session ->
                     HistoryRow(session)
                 }
             }

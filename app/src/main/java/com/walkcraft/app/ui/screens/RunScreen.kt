@@ -18,6 +18,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -25,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.walkcraft.app.domain.engine.EngineState
 import com.walkcraft.app.ui.screens.run.RunUiState
 import com.walkcraft.app.ui.screens.run.RunViewModel
 
@@ -39,6 +41,19 @@ fun RunScreen(
     DisposableEffect(Unit) {
         vm.bind()
         onDispose { vm.unbind() }
+    }
+
+    LaunchedEffect(Unit) {
+        var first = true
+        vm.engineState.collect { state ->
+            if (first) {
+                first = false
+                return@collect
+            }
+            if (state is EngineState.Finished || state is EngineState.Idle) {
+                onBack()
+            }
+        }
     }
 
     Scaffold(

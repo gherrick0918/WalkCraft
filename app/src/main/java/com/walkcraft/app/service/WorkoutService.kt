@@ -32,6 +32,7 @@ import com.walkcraft.app.domain.engine.EngineState
 import com.walkcraft.app.domain.engine.WorkoutEngine
 import com.walkcraft.app.domain.model.Block
 import com.walkcraft.app.domain.model.DeviceCapabilities
+import com.walkcraft.app.domain.model.Session
 import com.walkcraft.app.domain.model.SpeedPolicy
 import com.walkcraft.app.domain.model.SteadyBlock
 import com.walkcraft.app.domain.model.Workout
@@ -108,7 +109,9 @@ class WorkoutService : Service() {
     private lateinit var audioMgr: AudioManager
     private var focusReq: AudioFocusRequest? = null
     private var lastAnnouncedBlockIndex: Int = -1
-    private var tickerJob: Job? = null
+    private var timerJob: Job? = null
+    private var hasPersisted: Boolean = false
+    private var currentSessionId: String? = null
     private var preRollEnabled = false
     private var preRollJob: Job? = null
     private var latestSettings: DeviceSettings = DeviceSettings(
@@ -147,7 +150,7 @@ class WorkoutService : Service() {
 
         engine = WorkoutEngine(latestSettings.caps, latestSettings.policy)
         publishState(engine.current())
-        startForeground(NOTIF_ID, buildNotification(initialText = "Ready"))
+        startForeground(NOTIF_ID, buildNotification())
 
         audioMgr = getSystemService(AUDIO_SERVICE) as AudioManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -267,7 +270,11 @@ class WorkoutService : Service() {
                 onTickAnnounce()
                 Log.d(TAG, "skip")
             }
-            act == ACTION_STOP   -> { Log.d(TAG, "stopSelf"); handleStopAction() }
+            act == ACTION_STOP   -> {
+                Log.d(TAG, "stop requested")
+                stopEngine(userInitiated = true)
+                return START_NOT_STICKY
+            }
             act == ACTION_MUTE   -> {
                 scope.launch { userPrefs.setAudioMuted(true) }
                 tts?.stop()
@@ -282,12 +289,11 @@ class WorkoutService : Service() {
                 Log.d(TAG, "audio=unmuted (persisted)")
             }
             else -> {
-                // Keep the notif fresh; no state change.
                 updateNotification()
             }
         }
-        // If system kills us after this, redeliver the intent so Quick Start still fires
-        return START_REDELIVER_INTENT
+        updateNotification()
+        return START_NOT_STICKY
     }
 
     private fun looksLikeQuickStart(i: Intent?): Boolean {
@@ -296,8 +302,15 @@ class WorkoutService : Service() {
     }
 
     override fun onDestroy() {
-        tickerJob?.cancel()
+        timerJob?.cancel()
+        timerJob = null
         preRollJob?.cancel()
+        if (!hasPersisted && engine.isStarted()) {
+            val session = engine.finishNow()
+            persistOnce(session)
+        }
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        notifMgr.cancel(NOTIF_ID)
         scope.cancel()
         ttsReady = false
         tts?.shutdown()
@@ -355,18 +368,20 @@ class WorkoutService : Service() {
 
     private fun startWorkout(w: Workout) {
         lastAnnouncedBlockIndex = -1
+        hasPersisted = false
         engine.start(w)
+        currentSessionId = engine.currentSessionId()
         publishState()
-        startTicker()
+        startTimer()
         updateNotification()
         onTickAnnounce()
         Log.d(TAG, "started workout='${w.name}' blocks=${w.blocks.size}")
         preRollJob = null
     }
 
-    private fun startTicker() {
-        tickerJob?.cancel()
-        tickerJob = scope.launch {
+    private fun startTimer() {
+        timerJob?.cancel()
+        timerJob = scope.launch {
             while (isActive) {
                 delay(1000)
                 when (val state = engine.current()) {
@@ -374,31 +389,26 @@ class WorkoutService : Service() {
                         engine.tick()
                         val newState = engine.current()
                         publishState(newState)
-                        onEngineStateChanged(newState)
-                        if (newState is EngineState.Running) {
-                            updateNotification()
-                            onTickAnnounce()
+                        when (newState) {
+                            is EngineState.Running -> {
+                                updateNotification()
+                                onTickAnnounce()
+                            }
+                            is EngineState.Finished -> {
+                                stopEngine(userInitiated = false)
+                                return@launch
+                            }
+                            else -> { /* Paused */ }
                         }
                     }
                     is EngineState.Finished -> {
                         publishState(state)
-                        onEngineStateChanged(state)
+                        stopEngine(userInitiated = false)
                         return@launch
                     }
                     else -> { /* Paused/Idle */ }
                 }
             }
-        }
-    }
-
-    private fun onEngineStateChanged(state: EngineState) {
-        when (state) {
-            is EngineState.Finished -> {
-                scope.launch { history.insert(state.session) }
-                updateNotification("Workout complete")
-                stopSelf()
-            }
-            else -> { /* no-op */ }
         }
     }
 
@@ -494,53 +504,26 @@ class WorkoutService : Service() {
         return Workout(UUID.randomUUID().toString(), "Debug Quick", blocks)
     }
 
-    private fun handleStopAction() {
-        snapshotSessionNow()?.let { s -> scope.launch { history.insert(s) } }
+    private fun stopEngine(userInitiated: Boolean) {
+        timerJob?.cancel()
+        timerJob = null
+        preRollJob?.cancel()
+        val session = if (engine.isStarted()) engine.finishNow() else null
+        if (session != null) {
+            persistOnce(session)
+        }
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        notifMgr.cancel(NOTIF_ID)
         publishState(EngineState.Idle(null))
+        Log.d(TAG, "engine stopped userInitiated=$userInitiated sessionId=${session?.id}")
         stopSelf()
     }
 
-    private fun snapshotSessionNow(): com.walkcraft.app.domain.model.Session? {
-        val st = engine.current()
-        val workout = (st as? EngineState.Running)?.workout ?: (st as? EngineState.Paused)?.workout ?: return null
-        val idx = when (st) {
-            is EngineState.Running -> st.idx
-            is EngineState.Paused -> st.idx
-            else -> return null
-        }
-        val remaining = when (st) {
-            is EngineState.Running -> st.remaining
-            is EngineState.Paused -> st.remaining
-            else -> 0
-        }
-        val elapsedThisBlock = (workout.blocks[idx].durationSec - remaining).coerceAtLeast(0)
-        val speed = when (st) {
-            is EngineState.Running -> st.speed
-            is EngineState.Paused -> st.speed
-            else -> 0.0
-        }
-
-        val segs = buildList {
-            if (elapsedThisBlock > 0) {
-                add(
-                    com.walkcraft.app.domain.model.CompletedSegment(
-                        idx,
-                        speed,
-                        elapsedThisBlock
-                    )
-                )
-            }
-        }
-        val totalDurationSec = segs.sumOf { it.durationSec }
-        val now = System.currentTimeMillis()
-        return com.walkcraft.app.domain.model.Session(
-            workoutId = workout.id,
-            startedAt = now - totalDurationSec * 1000L,
-            endedAt = now,
-            unit = latestSettings.caps.unit,
-            segments = segs,
-            workoutName = workout.name
-        )
+    private fun persistOnce(session: Session) {
+        if (hasPersisted && currentSessionId == session.id) return
+        hasPersisted = true
+        currentSessionId = session.id
+        runBlocking { history.insertIgnore(session) }
     }
 
     private fun ensureChannel() {
@@ -558,78 +541,89 @@ class WorkoutService : Service() {
         }
     }
 
-    private fun buildNotification(initialText: String? = null): Notification {
-        // Use app launch intent (avoids hard-coding MainActivity path)
+    private fun buildNotification(): Notification {
         val launch = packageManager.getLaunchIntentForPackage(packageName)?.apply {
             addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
         val pendingFlags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        val contentPI = PendingIntent.getActivity(
-            this, 0, launch, pendingFlags
-        )
-
-        val title = "WalkCraft Workout"
-        val text = initialText ?: when (val s = engine.current()) {
-            is EngineState.Running -> {
-                val label = s.workout.blocks[s.idx].label
-                val remaining = formatDuration(s.remaining)
-                val speed = "%.1f".format(Locale.US, s.speed)
-                "Walking • $label • $remaining @ $speed ${latestSettings.caps.unit}"
-            }
-            is EngineState.Paused   -> "Paused"
-            is EngineState.Finished -> "Finished"
-            is EngineState.Idle     -> "Ready"
-        }
+        val contentPI = PendingIntent.getActivity(this, 0, launch, pendingFlags)
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentTitle(title)
-            .setContentText(text)
+            .setContentTitle("WalkCraft Workout")
             .setOnlyAlertOnce(true)
-            .setOngoing(true)
             .setContentIntent(contentPI)
             .setCategory(NotificationCompat.CATEGORY_WORKOUT)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setForegroundServiceBehavior(
-                NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE
-            )
-
-        val muteIntent = Intent(this, WorkoutService::class.java)
-            .setAction(if (audioEnabled) ACTION_MUTE else ACTION_UNMUTE)
-        val mutePi = PendingIntent.getService(this, 105, muteIntent, pendingFlags)
-        val muteActionTitle = if (audioEnabled) "Mute" else "Unmute"
-        builder.addAction(0, muteActionTitle, mutePi)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
 
         fun action(label: String, action: String, icon: Int): NotificationCompat.Action {
             val pi = PendingIntent.getService(
-                this, action.hashCode(),
+                this,
+                action.hashCode(),
                 Intent(this, WorkoutService::class.java).setAction(action),
                 pendingFlags
             )
             return NotificationCompat.Action.Builder(icon, label, pi).build()
         }
 
-        when (engine.current()) {
+        val state = engine.current()
+        val unitLabel = latestSettings.caps.unit.name
+        val text: String
+        var ongoing = false
+
+        when (state) {
             is EngineState.Running -> {
+                val label = state.workout.blocks[state.idx].label
+                val remaining = formatDuration(state.remaining)
+                val speed = "%.1f".format(Locale.US, state.speed)
+                text = "Running • $label • $remaining @ $speed $unitLabel"
+                ongoing = true
+                val muteIntent = Intent(this, WorkoutService::class.java)
+                    .setAction(if (audioEnabled) ACTION_MUTE else ACTION_UNMUTE)
+                val mutePi = PendingIntent.getService(this, 105, muteIntent, pendingFlags)
+                val muteActionTitle = if (audioEnabled) "Mute" else "Unmute"
+                builder.addAction(0, muteActionTitle, mutePi)
                 builder.addAction(action("Pause", ACTION_PAUSE, android.R.drawable.ic_media_pause))
-                builder.addAction(action("Skip",  ACTION_SKIP,  android.R.drawable.ic_media_next))
-                builder.addAction(action("Stop",  ACTION_STOP,  android.R.drawable.ic_menu_close_clear_cancel))
+                builder.addAction(action("Skip", ACTION_SKIP, android.R.drawable.ic_media_next))
+                builder.addAction(action("Stop", ACTION_STOP, android.R.drawable.ic_menu_close_clear_cancel))
             }
             is EngineState.Paused -> {
+                val label = state.workout.blocks[state.idx].label
+                val remaining = formatDuration(state.remaining)
+                val speed = "%.1f".format(Locale.US, state.speed)
+                text = "Paused • $label • $remaining @ $speed $unitLabel"
+                ongoing = true
+                val muteIntent = Intent(this, WorkoutService::class.java)
+                    .setAction(if (audioEnabled) ACTION_MUTE else ACTION_UNMUTE)
+                val mutePi = PendingIntent.getService(this, 105, muteIntent, pendingFlags)
+                val muteActionTitle = if (audioEnabled) "Mute" else "Unmute"
+                builder.addAction(0, muteActionTitle, mutePi)
                 builder.addAction(action("Resume", ACTION_RESUME, android.R.drawable.ic_media_play))
-                builder.addAction(action("Stop",   ACTION_STOP,   android.R.drawable.ic_menu_close_clear_cancel))
+                builder.addAction(action("Skip", ACTION_SKIP, android.R.drawable.ic_media_next))
+                builder.addAction(action("Stop", ACTION_STOP, android.R.drawable.ic_menu_close_clear_cancel))
             }
-            else -> {
+            is EngineState.Finished -> {
+                text = "Workout complete"
+                ongoing = false
+                builder.addAction(action("Stop", ACTION_STOP, android.R.drawable.ic_menu_close_clear_cancel))
+            }
+            is EngineState.Idle -> {
+                text = "Tap Start to begin workout"
+                ongoing = false
                 builder.addAction(action("Start", ACTION_START, android.R.drawable.ic_media_play))
-                builder.addAction(action("Stop",  ACTION_STOP,  android.R.drawable.ic_menu_close_clear_cancel))
+                builder.addAction(action("Stop", ACTION_STOP, android.R.drawable.ic_menu_close_clear_cancel))
             }
         }
+
+        builder.setContentText(text)
+        builder.setOngoing(ongoing)
         return builder.build()
     }
 
-    private fun updateNotification(text: String? = null) {
-        notifMgr.notify(NOTIF_ID, buildNotification(text))
+    private fun updateNotification() {
+        notifMgr.notify(NOTIF_ID, buildNotification())
     }
 
     private fun publishState(state: EngineState = engine.current()) {

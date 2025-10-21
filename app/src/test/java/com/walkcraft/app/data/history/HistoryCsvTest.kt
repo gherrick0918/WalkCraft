@@ -11,6 +11,7 @@ class HistoryCsvTest {
     @Test
     fun includesDistanceAndHeader() {
         val session = Session(
+            id = "s1",
             workoutId = "w1",
             startedAt = 100L,
             endedAt = 200L,
