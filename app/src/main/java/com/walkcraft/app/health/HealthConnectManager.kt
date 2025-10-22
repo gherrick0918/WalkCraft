@@ -12,40 +12,39 @@ import javax.inject.Singleton
 class HealthConnectManager @Inject constructor(@ApplicationContext private val context: Context) {
 
     private val healthConnectClient: HealthConnectClient? by lazy {
-        if (sdkStatus() == HealthConnectClient.SDK_AVAILABLE) {
-            HealthConnectClient.getOrCreate(context)
-        } else {
+        // Check if the Health Connect SDK is available on the device.
+        if (HealthConnectClient.getSdkStatus(context) == HealthConnectClient.SDK_UNAVAILABLE) {
             null
+        } else {
+            HealthConnectClient.getOrCreate(context)
         }
     }
 
     // --- FIX APPLIED HERE ---
-    // The requiredPermissions set is now correctly typed as Set<HealthPermission>
-    // instead of Set<String>.
-    val requiredPermissions: Set<HealthPermission> = setOf(
-        HealthPermission.createReadPermission(StepsRecord::class),
-        HealthPermission.createWritePermission(StepsRecord::class)
+    // The permission-granting syntax has been updated from 'createReadPermission'
+    // to 'getReadPermission' to match the newer Health Connect API.
+    val permissions = setOf(
+        HealthPermission.getReadPermission(StepsRecord::class),
+        HealthPermission.getWritePermission(StepsRecord::class)
         // TODO: Add any other permissions your app requires here.
     )
 
     /**
      * Returns the availability status of the Health Connect SDK.
      */
-    fun sdkStatus(): Int = HealthConnectClient.getSdkStatus(context)
+    fun getSdkStatus(): Int = HealthConnectClient.getSdkStatus(context)
 
     /**
      * Creates an ActivityResultContract to request Health Connect permissions.
      */
     fun requestPermissionsContract() =
-        healthConnectClient?.permissionController?.createRequestPermissionResultContract()
+        HealthConnectClient.getGrantedPermissionContract()
 
     /**
      * Determines if all the required permissions have been granted by the user.
      */
     suspend fun hasAllPermissions(): Boolean {
-        // The 'healthConnectClient' can be null if the SDK is not installed,
-        // in which case we can safely return false.
-        val grantedPermissions = healthConnectClient?.permissionController?.getGrantedPermissions()
-        return grantedPermissions?.containsAll(requiredPermissions) == true
+        return healthConnectClient?.permissionController?.getGrantedPermissions()
+            ?.containsAll(permissions) == true
     }
 }
