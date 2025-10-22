@@ -1,8 +1,6 @@
 package com.walkcraft.app.ui.screens
 
-import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,7 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.KeyboardOptions // <-- FIX: Add this missing import
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -32,19 +30,18 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.walkcraft.app.data.prefs.DevicePrefsRepository
 import com.walkcraft.app.data.prefs.DeviceSettings
 import com.walkcraft.app.domain.model.DeviceCapabilities
 import com.walkcraft.app.domain.model.SpeedPolicy
 import com.walkcraft.app.domain.model.SpeedUnit
-import androidx.hilt.navigation.compose.hiltViewModel
 import com.walkcraft.app.ui.viewmodel.DeviceSetupViewModel
-import com.walkcraft.app.ui.viewmodel.HealthUiState
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -53,17 +50,21 @@ fun DeviceSetupScreen(
     onBack: () -> Unit,
     vm: DeviceSetupViewModel = hiltViewModel()
 ) {
+    LaunchedEffect(Unit) { vm.refreshHealth() }
+    val health by vm.health.collectAsState()
+
+    val launcher = rememberLauncherForActivityResult(
+        contract = vm.hcPermissionContract()
+    ) { _ ->
+        vm.refreshHealth()
+    }
+
     val ctx = LocalContext.current
     val repo = remember { DevicePrefsRepository.from(ctx) }
     val scope = rememberCoroutineScope()
     val snack = remember { SnackbarHostState() }
 
     val settings by repo.settingsFlow.collectAsState(initial = null)
-    val health by vm.health.collectAsState()
-
-    LaunchedEffect(Unit) {
-        vm.refreshHealthState()
-    }
 
     var unit by remember { mutableStateOf(SpeedUnit.MPH) }
     var mode by remember { mutableStateOf(DeviceCapabilities.Mode.DISCRETE) }
@@ -106,11 +107,38 @@ fun DeviceSetupScreen(
             Text("Configure unit and your pad’s speeds. Saved to device (DataStore).")
 
             Spacer(Modifier.height(8.dp))
-            HealthConnectSection(
-                healthState = health,
-                onGrant = { vm.buildHealthPermissionIntent() },
-                onRefresh = vm::refreshHealthState
-            )
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors()
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Health Connect", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(8.dp))
+                    when {
+                        health.checking -> Text("Checking permissions…")
+                        !health.available -> Text("Not installed on this device")
+                        health.granted -> Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Granted")
+                            TextButton(onClick = vm::refreshHealth) { Text("Re-check") }
+                        }
+                        else -> Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Permission required")
+                            Button(onClick = { launcher.launch(vm.hcRequiredPermissions()) }) {
+                                Text("Grant")
+                            }
+                        }
+                    }
+                }
+            }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = unit == SpeedUnit.MPH, onClick = { unit = SpeedUnit.MPH }, label = { Text("MPH") })
@@ -204,70 +232,6 @@ fun DeviceSetupScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Save")
-            }
-        }
-    }
-}
-
-@Composable
-private fun HealthConnectSection(
-    healthState: HealthUiState,
-    onGrant: suspend () -> Intent,
-    onRefresh: () -> Unit
-) {
-    val scope = rememberCoroutineScope()
-    val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) {
-        onRefresh()
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors()
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Text("Health Connect", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(8.dp))
-
-            when {
-                healthState.checking -> {
-                    Text(
-                        "Checking permissions…",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                !healthState.available -> {
-                    Text(
-                        "Not installed on this device.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                healthState.granted -> {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Granted")
-                        TextButton(onClick = onRefresh) { Text("Re-check") }
-                    }
-                }
-                else -> {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Permission required")
-                        Button(onClick = {
-                            scope.launch {
-                                val intent = onGrant()
-                                launcher.launch(intent)
-                            }
-                        }) { Text("Grant") }
-                    }
-                }
             }
         }
     }
