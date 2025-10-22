@@ -47,6 +47,7 @@ import com.walkcraft.app.domain.model.DeviceCapabilities
 import com.walkcraft.app.domain.model.SpeedPolicy
 import com.walkcraft.app.domain.model.SpeedUnit
 import com.walkcraft.app.health.HealthConnectViewModel
+import com.walkcraft.app.ui.screens.HealthConnectPermissionCard
 import kotlinx.coroutines.launch
  
 @OptIn(ExperimentalMaterial3Api::class)
@@ -70,6 +71,12 @@ fun DeviceSetupScreen(
     ) { newlyGranted: Set<String> ->
         hcVm.onPermissionsResult(newlyGranted)
     }
+
+    HealthConnectPermissionCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 16.dp)
+    )
 
     var unit by remember { mutableStateOf(SpeedUnit.MPH) }
     var mode by remember { mutableStateOf(DeviceCapabilities.Mode.DISCRETE) }
