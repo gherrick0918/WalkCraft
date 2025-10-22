@@ -57,15 +57,11 @@ fun HealthConnectPermissionCard(
         }
     }
 
-    // FIX: Explicitly specify the type arguments for rememberLauncherForActivityResult
-    val permissionLauncher = rememberLauncherForActivityResult<Set<String>, Set<String>>(
+    val permissionLauncher = rememberLauncherForActivityResult(
         contract = PermissionController.createRequestPermissionResultContract()
     ) { grantedPermissions ->
         loading = false
-        // The HealthPermission class represents permissions as strings.
-        // We check if the returned set of granted permission strings contains all we require.
-        val requiredPermissionStrings = requiredPermissions.map { it.toString() }.toSet()
-        granted = grantedPermissions.containsAll(requiredPermissionStrings)
+        granted = grantedPermissions.containsAll(requiredPermissions)
         onPermissionsChanged(granted)
     }
 
@@ -95,8 +91,7 @@ fun HealthConnectPermissionCard(
                     } else {
                         "Grant" to ({
                             loading = true
-                            // The contract expects a Set<String>
-                            permissionLauncher.launch(requiredPermissions.map { it.toString() }.toSet())
+                            permissionLauncher.launch(requiredPermissions)
                         })
                     }
                 }
