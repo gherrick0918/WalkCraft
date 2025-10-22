@@ -5,10 +5,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.text.KeyboardOptions // <-- FIX: Add this missing import
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -28,11 +32,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.walkcraft.app.data.prefs.DevicePrefsRepository
 import com.walkcraft.app.data.prefs.DeviceSettings
 import com.walkcraft.app.domain.model.DeviceCapabilities
 import com.walkcraft.app.domain.model.SpeedPolicy
 import com.walkcraft.app.domain.model.SpeedUnit
+import com.walkcraft.app.ui.viewmodel.DeviceSetupViewModel
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -84,6 +90,8 @@ fun DeviceSetupScreen(onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text("Configure unit and your pad’s speeds. Saved to device (DataStore).")
+
+            HealthConnectCard()
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = unit == SpeedUnit.MPH, onClick = { unit = SpeedUnit.MPH }, label = { Text("MPH") })
@@ -177,6 +185,37 @@ fun DeviceSetupScreen(onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Save")
+            }
+        }
+    }
+}
+
+@Composable
+private fun HealthConnectCard(vm: DeviceSetupViewModel = hiltViewModel()) {
+    LaunchedEffect(Unit) { vm.refreshHealth() }
+    val state by vm.health.collectAsState()
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text("Health Connect", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(8.dp))
+            when {
+                state.checking -> Text("Checking…")
+                !state.installed -> Text("Not installed")
+                state.granted -> Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Granted")
+                    TextButton(onClick = vm::refreshHealth) { Text("Re-check") }
+                }
+                else -> Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Permission not granted")
+                    TextButton(onClick = vm::refreshHealth) { Text("Check") }
+                }
             }
         }
     }

@@ -41,6 +41,7 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.navigation.compose)
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("androidx.health.connect:connect-client:1.1.0")
 
     // Add this for local unit tests
     testImplementation(kotlin("test"))
