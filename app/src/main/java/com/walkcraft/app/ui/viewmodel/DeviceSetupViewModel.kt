@@ -27,11 +27,11 @@ class DeviceSetupViewModel @Inject constructor(
     private val _health = MutableStateFlow(HealthUi())
     val health: StateFlow<HealthUi> = _health
 
-    fun hcRequiredPermissions(): Set<HealthPermission> = hc.requiredPermissions
+    fun hcRequiredPermissions(): Set<String> = hc.permissions
     fun hcRequestContract() = hc.requestPermissionsContract()
 
     fun refreshHealth() {
-        val status = hc.sdkStatus()
+        val status = hc.getSdkStatus()
         // Available/installed if status != SDK_UNAVAILABLE (we treat UPDATE_REQUIRED as “installed” for now)
         val isInstalled = status != HealthConnectClient.SDK_UNAVAILABLE
         if (!isInstalled) {

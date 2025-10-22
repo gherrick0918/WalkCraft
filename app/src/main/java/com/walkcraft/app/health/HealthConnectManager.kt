@@ -22,10 +22,8 @@ class HealthConnectManager @Inject constructor(@ApplicationContext private val c
         }
     }
 
-    // --- FIX APPLIED IN PREVIOUS STEP ---
-    // The permission-granting syntax has been updated from 'createReadPermission'
-    // to 'getReadPermission' to match the newer Health Connect API.
-    val permissions: Set<HealthPermission> = setOf(
+    // --- FIX: Change the type from Set<HealthPermission> to Set<String> ---
+    val permissions: Set<String> = setOf(
         HealthPermission.getReadPermission(StepsRecord::class),
         HealthPermission.getWritePermission(StepsRecord::class)
         // TODO: Add any other permissions your app requires here.
@@ -39,7 +37,6 @@ class HealthConnectManager @Inject constructor(@ApplicationContext private val c
     /**
      * Creates an ActivityResultContract to request Health Connect permissions.
      */
-    // FIX: Update the permission request method
     fun requestPermissionsContract(): ActivityResultContract<Set<String>, Set<String>> {
         return PermissionController.createRequestPermissionResultContract()
     }
@@ -48,9 +45,8 @@ class HealthConnectManager @Inject constructor(@ApplicationContext private val c
      * Determines if all the required permissions have been granted by the user.
      */
     suspend fun hasAllPermissions(): Boolean {
+        // The getGrantedPermissions() method now returns Set<String>, so this comparison works correctly.
         return healthConnectClient?.permissionController?.getGrantedPermissions()
             ?.containsAll(permissions) == true
     }
-
-
 }
