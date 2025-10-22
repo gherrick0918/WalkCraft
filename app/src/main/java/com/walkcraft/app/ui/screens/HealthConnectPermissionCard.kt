@@ -41,6 +41,9 @@ fun HealthConnectPermissionCard(
             HealthPermission.getReadPermission(HeartRateRecord::class),
         )
     }
+    val requiredPermissionStrings = remember(requiredPermissions) {
+        requiredPermissions.map { it.permission }.toSet()
+    }
 
     var granted by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
@@ -49,16 +52,16 @@ fun HealthConnectPermissionCard(
     LaunchedEffect(sdkStatus) {
         if (sdkStatus == HealthConnectClient.SDK_AVAILABLE) {
             val already = client.permissionController.getGrantedPermissions()
-            granted = already.containsAll(requiredPermissions)
+            granted = already.map { it.permission }.toSet().containsAll(requiredPermissionStrings)
             onPermissionsChanged(granted)
         }
     }
 
-    val permissionLauncher = rememberLauncherForActivityResult<Set<HealthPermission>, Set<HealthPermission>>(
+    val permissionLauncher = rememberLauncherForActivityResult<Set<String>, Set<String>>(
         contract = PermissionController.createRequestPermissionResultContract()
-    ) { grantedSet: Set<HealthPermission> -> // The type here is now inferred correctly
+    ) { grantedSet: Set<String> ->
         loading = false
-        granted = grantedSet.containsAll(requiredPermissions)
+        granted = grantedSet.containsAll(requiredPermissionStrings)
         onPermissionsChanged(granted)
     }
 
@@ -80,14 +83,14 @@ fun HealthConnectPermissionCard(
 
             Spacer(Modifier.height(12.dp))
 
-            val (buttonText, onClick): Pair<String, () -> Unit> = when (sdkStatus) {
+            val buttonConfig: Pair<String, () -> Unit> = when (sdkStatus) {
                 HealthConnectClient.SDK_AVAILABLE -> {
                     if (granted) {
                         "Granted" to ({ /* no-op */ })
                     } else {
                         "Grant" to ({
                             loading = true
-                            permissionLauncher.launch(requiredPermissions)
+                            permissionLauncher.launch(requiredPermissionStrings)
                         })
                     }
                 }
@@ -104,6 +107,8 @@ fun HealthConnectPermissionCard(
                     })
                 }
             }
+
+            val (buttonText, onClick) = buttonConfig
 
             Button(
                 onClick = onClick,
