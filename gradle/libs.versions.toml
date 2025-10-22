@@ -9,7 +9,7 @@ lifecycleRuntimeKtx = "2.6.1"
 activityCompose = "1.8.0"
 composeBom = "2024.09.00"
 navigationCompose = "2.8.3"
-healthconnect = "1.1.0-alpha11"
+healthconnect = "1.2.0-alpha10"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }

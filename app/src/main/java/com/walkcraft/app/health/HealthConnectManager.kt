@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import androidx.activity.result.contract.ActivityResultContract
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
@@ -19,19 +20,19 @@ object HealthConnectManager {
         HealthPermission.getReadPermission(HeartRateRecord::class)
     )
 
-    fun sdkStatus(context: Context): Int =
-        HealthConnectClient.getSdkStatus(context)
+    // NEW: Define the provider package name for the Play Store.
+    private const val providerPackageName = "com.google.android.apps.healthdata"
 
-    fun providerPackageName(context: Context): String =
-        HealthConnectClient.getProviderPackageName(context)
+    // UPDATED: sdkStatus now requires the provider package name.
+    fun sdkStatus(context: Context): Int =
+        HealthConnectClient.getSdkStatus(context, providerPackageName)
 
     /**
      * Open the Play Store (or app details) to install/update the provider.
      */
     fun openInstallOrUpdate(context: Context) {
-        val pkg = providerPackageName(context)
-        val marketUri = Uri.parse("market://details?id=$pkg")
-        val webUri = Uri.parse("https://play.google.com/store/apps/details?id=$pkg")
+        val marketUri = Uri.parse("market://details?id=$providerPackageName")
+        val webUri = Uri.parse("https://play.google.com/store/apps/details?id=$providerPackageName")
         try {
             context.startActivity(Intent(Intent.ACTION_VIEW, marketUri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         } catch (_: ActivityNotFoundException) {
@@ -43,9 +44,8 @@ object HealthConnectManager {
      * Open Health Connect’s App Info (useful if the user needs to toggle something manually).
      */
     fun openAppInfo(context: Context) {
-        val pkg = providerPackageName(context)
         val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-            .setData(Uri.fromParts("package", pkg, null))
+            .setData(Uri.fromParts("package", providerPackageName, null))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(intent)
     }
@@ -53,7 +53,7 @@ object HealthConnectManager {
     /**
      * Compose/Activity uses this to build the ActivityResult contract.
      */
-    fun permissionContract(): androidx.activity.result.contract.ActivityResultContract<Set<String>, Set<String>> =
+    fun permissionContract(): ActivityResultContract<Set<String>, Set<String>> =
         PermissionController.createRequestPermissionResultContract()
 
     fun client(context: Context): HealthConnectClient =

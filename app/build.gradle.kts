@@ -12,8 +12,8 @@ android {
         applicationId = "com.walkcraft.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.0.4"
+        versionCode = 5
+        versionName = "1.0.5"
 
         // Add the test instrumentation runner
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -41,8 +41,9 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.navigation.compose)
     implementation("androidx.datastore:datastore-preferences:1.1.1")
-    implementation(libs.healthconnect.client)
+    implementation("androidx.health.connect:connect-client:1.2.0-alpha02")
     implementation("jakarta.inject:jakarta.inject-api:2.0.1")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.4")
 
     // Add this for local unit tests
     testImplementation(kotlin("test"))
