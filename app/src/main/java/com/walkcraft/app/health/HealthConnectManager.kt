@@ -2,7 +2,8 @@ package com.walkcraft.app.health
 
 import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
-import androidx.health.connect.client.permission.HealthPermission // This import might become unused
+import androidx.health.connect.client.PermissionController
+import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.StepsRecord
 
@@ -14,8 +15,7 @@ class HealthConnectManager(private val context: Context) {
         HealthConnectClient.getSdkStatus(context, "com.google.android.apps.healthdata")
 
     /** Permissions our MVP cares about. */
-    // Change the type from Set<HealthPermission> to Set<String>
-    val requiredPermissions: Set<String> = setOf(
+    val requiredPermissions: Set<HealthPermission> = setOf(
         HealthPermission.getReadPermission(StepsRecord::class),
         HealthPermission.getReadPermission(HeartRateRecord::class),
     )
@@ -25,4 +25,8 @@ class HealthConnectManager(private val context: Context) {
         val granted = client.permissionController.getGrantedPermissions()
         return granted.containsAll(requiredPermissions)
     }
+
+    /** ActivityResult contract for requesting HC permissions (typed). */
+    fun requestPermissionsContract() =
+        PermissionController.createRequestPermissionResultContract()
 }

@@ -1,5 +1,6 @@
 package com.walkcraft.app.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -40,7 +41,7 @@ import com.walkcraft.app.domain.model.SpeedPolicy
 import com.walkcraft.app.domain.model.SpeedUnit
 import com.walkcraft.app.ui.viewmodel.DeviceSetupViewModel
 import kotlinx.coroutines.launch
-
+ 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DeviceSetupScreen(onBack: () -> Unit) {
@@ -194,6 +195,11 @@ fun DeviceSetupScreen(onBack: () -> Unit) {
 private fun HealthConnectCard(vm: DeviceSetupViewModel = hiltViewModel()) {
     LaunchedEffect(Unit) { vm.refreshHealth() }
     val state by vm.health.collectAsState()
+    val launcher = rememberLauncherForActivityResult(
+        contract = vm.hcRequestContract()
+    ) { _ ->
+        vm.refreshHealth()
+    }
 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
@@ -213,8 +219,10 @@ private fun HealthConnectCard(vm: DeviceSetupViewModel = hiltViewModel()) {
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Permission not granted")
-                    TextButton(onClick = vm::refreshHealth) { Text("Check") }
+                    Text("Permission required")
+                    Button(onClick = { launcher.launch(vm.hcRequiredPermissions()) }) {
+                        Text("Grant")
+                    }
                 }
             }
         }

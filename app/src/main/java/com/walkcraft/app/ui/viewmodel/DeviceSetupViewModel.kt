@@ -2,6 +2,7 @@ package com.walkcraft.app.ui.viewmodel
 
 import android.app.Application
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.permission.HealthPermission
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.walkcraft.app.health.HealthConnectManager
@@ -25,6 +26,9 @@ class DeviceSetupViewModel @Inject constructor(
 
     private val _health = MutableStateFlow(HealthUi())
     val health: StateFlow<HealthUi> = _health
+
+    fun hcRequiredPermissions(): Set<HealthPermission> = hc.requiredPermissions
+    fun hcRequestContract() = hc.requestPermissionsContract()
 
     fun refreshHealth() {
         val status = hc.sdkStatus()
