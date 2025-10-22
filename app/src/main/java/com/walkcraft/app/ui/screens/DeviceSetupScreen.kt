@@ -1,6 +1,6 @@
 package com.walkcraft.app.ui.screens
 
-import android.widget.Toast
+import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -9,9 +9,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions // <-- FIX: Add this missing import
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -19,7 +22,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -33,31 +35,41 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.HealthConnectClient
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.lifecycle.repeatOnLifecycle
+import androidx.health.connect.client.PermissionController
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.walkcraft.app.data.prefs.DevicePrefsRepository
 import com.walkcraft.app.data.prefs.DeviceSettings
 import com.walkcraft.app.domain.model.DeviceCapabilities
 import com.walkcraft.app.domain.model.SpeedPolicy
 import com.walkcraft.app.domain.model.SpeedUnit
-import com.walkcraft.app.health.HealthConnectManager
-import com.walkcraft.app.ui.screens.setup.HealthConnectViewModel
+import com.walkcraft.app.health.HealthConnectViewModel
 import kotlinx.coroutines.launch
  
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DeviceSetupScreen(onBack: () -> Unit) {
+fun DeviceSetupScreen(
+    onBack: () -> Unit,
+    hcVm: HealthConnectViewModel = hiltViewModel()
+) {
     val ctx = LocalContext.current
     val repo = remember { DevicePrefsRepository.from(ctx) }
     val scope = rememberCoroutineScope()
     val snack = remember { SnackbarHostState() }
 
     val settings by repo.settingsFlow.collectAsState(initial = null)
+    val ui by hcVm.uiState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) { hcVm.refresh() }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        PermissionController.createRequestPermissionActivityContract()
+    ) { newlyGranted: Set<String> ->
+        hcVm.onPermissionsResult(newlyGranted)
+    }
 
     var unit by remember { mutableStateOf(SpeedUnit.MPH) }
     var mode by remember { mutableStateOf(DeviceCapabilities.Mode.DISCRETE) }
@@ -99,7 +111,20 @@ fun DeviceSetupScreen(onBack: () -> Unit) {
         ) {
             Text("Configure unit and your pad’s speeds. Saved to device (DataStore).")
 
-            HealthConnectCard()
+            val sdkStatus = HealthConnectClient.getSdkStatus(ctx, HEALTH_CONNECT_PROVIDER_PACKAGE)
+            val hcAvailable = sdkStatus == HealthConnectClient.SDK_AVAILABLE
+
+            HealthConnectCard(
+                uiState = ui,
+                hcAvailable = hcAvailable,
+                onGrantClick = { permissionLauncher.launch(hcVm.requiredPermissions) },
+                onOpenHealthConnect = {
+                    ctx.startActivity(
+                        Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
+            )
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = unit == SpeedUnit.MPH, onClick = { unit = SpeedUnit.MPH }, label = { Text("MPH") })
@@ -200,67 +225,49 @@ fun DeviceSetupScreen(onBack: () -> Unit) {
 
 @Composable
 private fun HealthConnectCard(
-    vm: HealthConnectViewModel = viewModel()
+    uiState: HealthConnectViewModel.UiState,
+    hcAvailable: Boolean,
+    onGrantClick: () -> Unit,
+    onOpenHealthConnect: () -> Unit
 ) {
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val state by vm.uiState.collectAsState()
-
-    LaunchedEffect(lifecycleOwner) {
-        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            vm.refreshStatus()
-        }
-    }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = HealthConnectManager.permissionContract()
-    ) { granted: Set<String> ->
-        val allGranted = granted.containsAll(HealthConnectManager.requiredPermissions)
-        vm.markGranted(allGranted)
-        val msg = if (allGranted) "Health Connect permissions granted" else "Health Connect permissions missing"
-        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-    }
-
-    val onGrantClick = {
-        when (HealthConnectManager.sdkStatus(context)) {
-            HealthConnectClient.SDK_UNAVAILABLE,
-            HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> {
-                HealthConnectManager.openInstallOrUpdate(context)
-            }
-            HealthConnectClient.SDK_AVAILABLE -> {
-                permissionLauncher.launch(HealthConnectManager.requiredPermissions)
-            }
-            else -> {
-                HealthConnectManager.openAppInfo(context)
-            }
-        }
-    }
-
-    Surface(
+    Card(
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(Modifier.padding(16.dp)) {
             Text("Health Connect", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
-            val subtitle = when (state.sdkStatus) {
-                HealthConnectClient.SDK_AVAILABLE ->
-                    if (state.granted) "Ready" else "Permission required"
-                HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED ->
-                    "Update required"
-                else -> "Not installed"
-            }
-            Text(subtitle, style = MaterialTheme.typography.bodyMedium)
 
-            Spacer(Modifier.height(12.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                val label = when (state.sdkStatus) {
-                    HealthConnectClient.SDK_AVAILABLE -> if (state.granted) "Manage" else "Grant"
-                    else -> "Install / Update"
+            if (!hcAvailable) {
+                Text(
+                    "Health Connect not installed or needs update",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            } else {
+                Text(
+                    if (uiState.hasAllPermissions) "Ready" else "Permission required",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                Spacer(Modifier.height(12.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    if (uiState.hasAllPermissions) {
+                        TextButton(onClick = onOpenHealthConnect) {
+                            Text("Open Health Connect")
+                        }
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Button(
+                        enabled = !uiState.hasAllPermissions,
+                        onClick = onGrantClick
+                    ) {
+                        Text("Grant")
+                    }
                 }
-                Button(onClick = onGrantClick) { Text(label) }
             }
         }
     }
 }
+
+private const val HEALTH_CONNECT_PROVIDER_PACKAGE = "com.google.android.apps.healthdata"

@@ -5,6 +5,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.health.connect.client.HealthConnectClient
+import com.walkcraft.app.health.HealthConnectViewModel
 import com.walkcraft.app.ui.screens.run.RunViewModel
 
 @Composable
@@ -16,6 +18,8 @@ inline fun <reified VM : ViewModel> hiltViewModel(): VM {
             return when {
                 modelClass.isAssignableFrom(RunViewModel::class.java) ->
                     RunViewModel(appContext) as T
+                modelClass.isAssignableFrom(HealthConnectViewModel::class.java) ->
+                    HealthConnectViewModel(HealthConnectClient.getOrCreate(appContext)) as T
                 else -> throw IllegalArgumentException("Unknown ViewModel class: $modelClass")
             }
         }
