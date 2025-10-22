@@ -42,7 +42,7 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("androidx.health.connect:connect-client:1.2.0-alpha02")
-    implementation("javax.inject:javax.inject:1")
+    implementation("jakarta.inject:jakarta.inject-api:2.0.1")
 
     // Add this for local unit tests
     testImplementation(kotlin("test"))

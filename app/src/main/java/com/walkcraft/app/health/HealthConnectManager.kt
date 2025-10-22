@@ -8,7 +8,7 @@ import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.StepsRecord
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
-import javax.inject.Singleton
+import jakarta.inject.Singleton
 
 @Singleton
 class HealthConnectManager @Inject constructor(@ApplicationContext private val context: Context) {
