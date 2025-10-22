@@ -19,13 +19,13 @@ class HealthConnectViewModel @Inject constructor(
 
     data class UiState(
         val hasAllPermissions: Boolean = false,
-        val granted: Set<HealthPermission> = emptySet()
+        val granted: Set<String> = emptySet()
     )
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState
 
-    val requiredPermissions: Set<HealthPermission> = setOf(
+    val requiredPermissions: Set<String> = setOf(
         HealthPermission.getReadPermission(StepsRecord::class),
         HealthPermission.getReadPermission(HeartRateRecord::class)
     )
@@ -38,7 +38,7 @@ class HealthConnectViewModel @Inject constructor(
         )
     }
 
-    fun onPermissionsResult(@Suppress("UNUSED_PARAMETER") granted: Set<HealthPermission>) {
+    fun onPermissionsResult(@Suppress("UNUSED_PARAMETER") granted: Set<String>) {
         refresh()
     }
 }
