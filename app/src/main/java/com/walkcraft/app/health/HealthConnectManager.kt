@@ -3,6 +3,7 @@ package com.walkcraft.app.health
 import android.content.Context
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.StepsRecord
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -24,7 +25,7 @@ class HealthConnectManager @Inject constructor(@ApplicationContext private val c
     // --- FIX APPLIED IN PREVIOUS STEP ---
     // The permission-granting syntax has been updated from 'createReadPermission'
     // to 'getReadPermission' to match the newer Health Connect API.
-    val permissions = setOf(
+    val permissions: Set<HealthPermission> = setOf(
         HealthPermission.getReadPermission(StepsRecord::class),
         HealthPermission.getWritePermission(StepsRecord::class)
         // TODO: Add any other permissions your app requires here.
@@ -40,8 +41,7 @@ class HealthConnectManager @Inject constructor(@ApplicationContext private val c
      */
     // FIX: Update the permission request method
     fun requestPermissionsContract(): ActivityResultContract<Set<String>, Set<String>> {
-        return HealthConnectClient.getHealthConnectPermissionDelegate()
-            .createRequestPermissionResultContract()
+        return PermissionController.createRequestPermissionResultContract()
     }
 
     /**
@@ -51,4 +51,6 @@ class HealthConnectManager @Inject constructor(@ApplicationContext private val c
         return healthConnectClient?.permissionController?.getGrantedPermissions()
             ?.containsAll(permissions) == true
     }
+
+
 }
