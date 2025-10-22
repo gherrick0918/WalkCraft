@@ -66,7 +66,7 @@ fun DeviceSetupScreen(
     LaunchedEffect(Unit) { hcVm.refresh() }
 
     val permissionLauncher = rememberLauncherForActivityResult(
-        PermissionController.createRequestPermissionActivityContract()
+        PermissionController.createRequestPermissionResultContract()
     ) { newlyGranted: Set<String> ->
         hcVm.onPermissionsResult(newlyGranted)
     }
