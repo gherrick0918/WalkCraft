@@ -15,7 +15,7 @@ class HealthConnectManager(private val context: Context) {
         HealthConnectClient.getSdkStatus(context, "com.google.android.apps.healthdata")
 
     /** Permissions our MVP cares about. */
-    val requiredPermissions: Set<HealthPermission> = setOf(
+    val requiredPermissions: Set<String> = setOf(
         HealthPermission.getReadPermission(StepsRecord::class),
         HealthPermission.getReadPermission(HeartRateRecord::class),
     )

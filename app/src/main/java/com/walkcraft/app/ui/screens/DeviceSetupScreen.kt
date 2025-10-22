@@ -220,7 +220,7 @@ private fun HealthConnectCard(vm: DeviceSetupViewModel = hiltViewModel()) {
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text("Permission required")
-                    Button(onClick = { launcher.launch(vm.hcRequiredPermissions()) }) {
+                    Button(onClick = { launcher.launch(vm.hcRequiredPermissions().map { it.toString() }.toSet()) }) {
                         Text("Grant")
                     }
                 }
