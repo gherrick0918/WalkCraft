@@ -5,8 +5,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.hilt.android)
-    kotlin("kapt")
-    alias(libs.plugins.hilt)
+    alias(libs.plugins.kotlin.kapt)
 }
 
 android {
@@ -20,22 +19,27 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        // Add the test instrumentation runner
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
-    buildFeatures { compose = true }
-    composeOptions { kotlinCompilerExtensionVersion = "1.5.3" } // Use a specific version for stability
+
+    buildFeatures {
+        compose = true
+    }
+
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.1"
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    // The deprecated kotlinOptions block is removed from here.
+
     testOptions {
         unitTests.isIncludeAndroidResources = true
     }
 }
 
-// This new block configures the Kotlin compiler with the recommended DSL.
 kotlin {
     compilerOptions {
         jvmTarget = JvmTarget.JVM_17
@@ -70,20 +74,17 @@ dependencies {
     kapt(libs.dagger.hilt.compiler)
     kapt(libs.androidx.hilt.compiler)
 
-    // Add this for local unit tests
     testImplementation(kotlin("test"))
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.11.1")
     testImplementation("androidx.test:core:1.5.0")
     testImplementation(libs.androidx.room.testing)
 
-    // Add these for Android instrumented tests
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
 
-    // Debug dependencies
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 }

@@ -6,8 +6,15 @@ pluginManagement {
     }
     resolutionStrategy {
         eachPlugin {
-            if (requested.id.id == "com.google.dagger.hilt.android") {
-                useModule("com.google.dagger:hilt-android-gradle-plugin:${requested.version}")
+            when (requested.id.id) {
+                "com.google.dagger.hilt.android" -> {
+                    useModule("com.google.dagger:hilt-android-gradle-plugin:${requested.version}")
+                }
+                "org.jetbrains.kotlin.android",
+                "org.jetbrains.kotlin.kapt",
+                "org.jetbrains.kotlin.plugin.compose" -> {
+                    useModule("org.jetbrains.kotlin:kotlin-gradle-plugin:${requested.version}")
+                }
             }
         }
     }
