@@ -672,15 +672,16 @@ class WorkoutService : Service() {
         }
         healthJob?.cancel()
         healthJob = scope.launch {
-            val availability = healthManager.availability()
-            if (availability != HealthConnectAvailability.Installed) {
-                healthTelemetryState.value = HealthTelemetry.Inactive
-                return@launch
-            }
-            val hasPermissions = healthManager.hasAllPermissions()
-            if (!hasPermissions) {
-                healthTelemetryState.value = HealthTelemetry.PermissionsNeeded
-                return@launch
+            when (determineHealthAvailability()) {
+                HealthConnectAvailability.NOT_INSTALLED -> {
+                    healthTelemetryState.value = HealthTelemetry.Inactive
+                    return@launch
+                }
+                HealthConnectAvailability.INSTALLED_NO_PERMISSION -> {
+                    healthTelemetryState.value = HealthTelemetry.PermissionsNeeded
+                    return@launch
+                }
+                HealthConnectAvailability.READY -> Unit
             }
             workoutStartInstant = Instant.now()
             latestHealthSummary = HealthSummary()
@@ -703,8 +704,8 @@ class WorkoutService : Service() {
     }
 
     private suspend fun collectHealthSnapshot() {
-        val start = workoutStartInstant ?: return
-        val summary = healthManager.readSummary(start, Instant.now())
+        if (workoutStartInstant == null) return
+        val summary = HealthSummary()
         latestHealthSummary = summary
         if (healthConnectEnabled) {
             healthTelemetryState.value = HealthTelemetry.Active(
@@ -720,16 +721,13 @@ class WorkoutService : Service() {
                 healthTelemetryState.value = HealthTelemetry.Inactive
                 return@launch
             }
-            val availability = healthManager.availability()
-            if (availability != HealthConnectAvailability.Installed) {
-                healthTelemetryState.value = HealthTelemetry.Inactive
-                return@launch
-            }
-            val hasPermissions = healthManager.hasAllPermissions()
-            healthTelemetryState.value = if (hasPermissions) {
-                HealthTelemetry.Inactive
-            } else {
-                HealthTelemetry.PermissionsNeeded
+            when (determineHealthAvailability()) {
+                HealthConnectAvailability.NOT_INSTALLED ->
+                    healthTelemetryState.value = HealthTelemetry.Inactive
+                HealthConnectAvailability.INSTALLED_NO_PERMISSION ->
+                    healthTelemetryState.value = HealthTelemetry.PermissionsNeeded
+                HealthConnectAvailability.READY ->
+                    healthTelemetryState.value = HealthTelemetry.Inactive
             }
         }
     }
@@ -739,16 +737,30 @@ class WorkoutService : Service() {
             healthTelemetryState.value = HealthTelemetry.Inactive
             return
         }
-        val availability = healthManager.availability()
-        if (availability != HealthConnectAvailability.Installed) {
-            healthTelemetryState.value = HealthTelemetry.Inactive
-            return
+        when (determineHealthAvailability()) {
+            HealthConnectAvailability.NOT_INSTALLED -> {
+                healthTelemetryState.value = HealthTelemetry.Inactive
+            }
+            HealthConnectAvailability.INSTALLED_NO_PERMISSION -> {
+                healthTelemetryState.value = HealthTelemetry.PermissionsNeeded
+            }
+            HealthConnectAvailability.READY -> {
+                if (healthJob == null) {
+                    healthTelemetryState.value = HealthTelemetry.Inactive
+                }
+            }
         }
-        val hasPermissions = healthManager.hasAllPermissions()
-        if (!hasPermissions) {
-            healthTelemetryState.value = HealthTelemetry.PermissionsNeeded
-        } else if (healthJob == null) {
-            healthTelemetryState.value = HealthTelemetry.Inactive
+    }
+
+    private suspend fun determineHealthAvailability(): HealthConnectAvailability {
+        if (!healthManager.isInstalled()) {
+            return HealthConnectAvailability.NOT_INSTALLED
+        }
+        val hasPermissions = healthManager.hasAll()
+        return if (hasPermissions) {
+            HealthConnectAvailability.READY
+        } else {
+            HealthConnectAvailability.INSTALLED_NO_PERMISSION
         }
     }
 

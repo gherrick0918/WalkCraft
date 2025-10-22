@@ -12,31 +12,31 @@ import kotlinx.coroutines.launch
 
 @HiltViewModel
 class DeviceSetupViewModel @Inject constructor(
-    app: Application,
+    application: Application,
     private val hc: HealthConnectManager
-) : AndroidViewModel(app) {
+) : AndroidViewModel(application) {
 
-    data class HealthUiState(
+    data class HealthUi(
         val available: Boolean = false,
         val granted: Boolean = false,
         val checking: Boolean = false
     )
 
-    private val _health = MutableStateFlow(HealthUiState())
-    val health: StateFlow<HealthUiState> = _health
+    private val _health = MutableStateFlow(HealthUi())
+    val health: StateFlow<HealthUi> = _health
 
     fun refreshHealth() {
-        if (!hc.isAvailable()) {
-            _health.value = HealthUiState(available = false, granted = false, checking = false)
+        if (!hc.isInstalled()) {
+            _health.value = HealthUi(available = false, granted = false, checking = false)
             return
         }
-        _health.value = HealthUiState(available = true, granted = false, checking = true)
+        _health.value = HealthUi(available = true, granted = false, checking = true)
         viewModelScope.launch {
-            val ok = hc.hasAllPermissions()
-            _health.value = HealthUiState(available = true, granted = ok, checking = false)
+            val ok = hc.hasAll()
+            _health.value = HealthUi(available = true, granted = ok, checking = false)
         }
     }
 
-    fun hcPermissionContract() = hc.requestPermissionsContract()
-    fun hcRequiredPermissions(): Set<String> = hc.requiredPermissions
+    fun hcPermissionContract() = hc.requestContract()
+    fun hcRequired() = hc.required
 }
