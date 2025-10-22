@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.hilt.android)
     kotlin("kapt")
+    alias(libs.plugins.hilt)
 }
 
 android {
@@ -23,7 +24,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }
-    composeOptions { kotlinCompilerExtensionVersion = "1.5.1" } // Use a specific version for stability
+    composeOptions { kotlinCompilerExtensionVersion = "1.5.3" } // Use a specific version for stability
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -41,6 +42,8 @@ kotlin {
     }
 }
 
+val hiltNavigationComposeVersion = "1.2.0" // Or whatever version you are using
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -54,6 +57,10 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.navigation.compose)
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("com.google.dagger:hilt-android:2.51.1")
+    kapt("com.google.dagger:hilt-compiler:2.51.1")
+    implementation("androidx.hilt:hilt-navigation-compose:$hiltNavigationComposeVersion")
+    kapt("androidx.hilt:hilt-compiler:$hiltNavigationComposeVersion")
     implementation(libs.androidx.health.connect)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)

@@ -23,13 +23,15 @@ class HealthConnectManager(private val context: Context) {
         false
     }
 
-    val required: Set<HealthPermission> = setOf(
+    // FIX: Changed the type from Set<HealthPermission> to Set<String>
+    val required: Set<String> = setOf(
         HealthPermission.getReadPermission(StepsRecord::class),
         HealthPermission.getReadPermission(HeartRateRecord::class),
     )
 
     suspend fun hasAll(): Boolean {
-        val granted: Set<HealthPermission> = permissionsController.getGrantedPermissions()
+        // The getGrantedPermissions() method correctly returns a Set<String>
+        val granted: Set<String> = permissionsController.getGrantedPermissions()
         return required.all { it in granted }
     }
 
