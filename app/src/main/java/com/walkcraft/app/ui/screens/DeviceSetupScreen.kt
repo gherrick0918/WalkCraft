@@ -5,13 +5,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions // <-- FIX: Add this missing import
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -19,6 +19,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -32,16 +33,20 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.health.connect.client.HealthConnectClient
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.repeatOnLifecycle
 import com.walkcraft.app.data.prefs.DevicePrefsRepository
 import com.walkcraft.app.data.prefs.DeviceSettings
 import com.walkcraft.app.domain.model.DeviceCapabilities
 import com.walkcraft.app.domain.model.SpeedPolicy
 import com.walkcraft.app.domain.model.SpeedUnit
-import com.walkcraft.app.health.HcStatus
-import com.walkcraft.app.ui.viewmodel.DeviceSetupViewModel
+import com.walkcraft.app.health.HealthConnectManager
+import com.walkcraft.app.ui.screens.setup.HealthConnectViewModel
 import kotlinx.coroutines.launch
  
 @OptIn(ExperimentalMaterial3Api::class)
@@ -194,73 +199,67 @@ fun DeviceSetupScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun HealthConnectCard(vm: DeviceSetupViewModel = hiltViewModel()) {
-    LaunchedEffect(Unit) { vm.refreshHealth() }
-    val state by vm.health.collectAsState()
+private fun HealthConnectCard(
+    vm: HealthConnectViewModel = viewModel()
+) {
     val context = LocalContext.current
-    val launcher = rememberLauncherForActivityResult(
-        contract = vm.hcRequestContract()
-    ) { _ ->
-        vm.refreshHealth()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val state by vm.uiState.collectAsState()
+
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            vm.refreshStatus()
+        }
     }
 
-    Card(Modifier.fillMaxWidth()) {
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = HealthConnectManager.permissionContract()
+    ) { granted: Set<String> ->
+        val allGranted = granted.containsAll(HealthConnectManager.requiredPermissions)
+        vm.markGranted(allGranted)
+        val msg = if (allGranted) "Health Connect permissions granted" else "Health Connect permissions missing"
+        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+    }
+
+    val onGrantClick = {
+        when (HealthConnectManager.sdkStatus(context)) {
+            HealthConnectClient.SDK_UNAVAILABLE,
+            HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> {
+                HealthConnectManager.openInstallOrUpdate(context)
+            }
+            HealthConnectClient.SDK_AVAILABLE -> {
+                permissionLauncher.launch(HealthConnectManager.requiredPermissions)
+            }
+            else -> {
+                HealthConnectManager.openAppInfo(context)
+            }
+        }
+    }
+
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth()
+    ) {
         Column(Modifier.padding(16.dp)) {
             Text("Health Connect", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
-            when {
-                state.checking -> Text("Checking…")
+            val subtitle = when (state.sdkStatus) {
+                HealthConnectClient.SDK_AVAILABLE ->
+                    if (state.granted) "Ready" else "Permission required"
+                HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED ->
+                    "Update required"
+                else -> "Not installed"
+            }
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium)
 
-                state.status == HcStatus.NOT_SUPPORTED -> {
-                    Text("Not supported on this device/profile.")
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                val label = when (state.sdkStatus) {
+                    HealthConnectClient.SDK_AVAILABLE -> if (state.granted) "Manage" else "Grant"
+                    else -> "Install / Update"
                 }
-
-                state.status == HcStatus.NOT_INSTALLED -> {
-                    Text("Not installed in this profile.")
-                    Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(onClick = {
-                            // Open Play to install HC in THIS profile
-                            context.startActivity(vm.hcPlayStoreIntent())
-                        }) { Text("Install") }
-                        TextButton(onClick = vm::refreshHealth) { Text("Re-check") }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Tip: If you’re using a Work Profile, Health Connect must be installed in that same profile.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-
-                state.status == HcStatus.UPDATE_REQUIRED -> {
-                    Text("Update required.")
-                    Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(onClick = {
-                            context.startActivity(vm.hcPlayStoreIntent())
-                        }) { Text("Update") }
-                        TextButton(onClick = vm::refreshHealth) { Text("Re-check") }
-                    }
-                }
-
-                state.status == HcStatus.AVAILABLE && state.granted -> {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Granted")
-                        TextButton(onClick = vm::refreshHealth) { Text("Re-check") }
-                    }
-                }
-
-                state.status == HcStatus.AVAILABLE && !state.granted -> {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Permission required")
-                        Button(onClick = {
-                            // Launch typed permission flow
-                            launcher.launch(vm.hcRequiredPermissions())
-                            // optional debug toast:
-                            Toast.makeText(context, "Requesting Health Connect permissions…", Toast.LENGTH_SHORT).show()
-                        }) { Text("Grant") }
-                    }
-                }
+                Button(onClick = onGrantClick) { Text(label) }
             }
         }
     }
