@@ -39,6 +39,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
+import androidx.health.connect.client.permission.HealthPermission
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.walkcraft.app.data.prefs.DevicePrefsRepository
@@ -68,7 +69,7 @@ fun DeviceSetupScreen(
 
     val permissionLauncher = rememberLauncherForActivityResult(
         PermissionController.createRequestPermissionResultContract()
-    ) { newlyGranted: Set<String> ->
+    ) { newlyGranted: Set<HealthPermission> ->
         hcVm.onPermissionsResult(newlyGranted)
     }
 
