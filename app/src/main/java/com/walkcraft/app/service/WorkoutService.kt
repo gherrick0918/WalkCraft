@@ -38,9 +38,6 @@ import com.walkcraft.app.domain.model.SteadyBlock
 import com.walkcraft.app.domain.model.Workout
 import com.walkcraft.app.domain.model.SpeedUnit
 import com.walkcraft.app.domain.plan.Plans
-import com.walkcraft.app.health.HealthConnectAvailability
-import com.walkcraft.app.health.HealthConnectManager
-import com.walkcraft.app.health.HealthSummary
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -56,7 +53,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-import java.time.Instant
 import java.util.Locale
 import java.util.UUID
 
@@ -99,20 +95,12 @@ class WorkoutService : Service() {
         }
     }
 
-    sealed interface HealthTelemetry {
-        data object Inactive : HealthTelemetry
-        data object PermissionsNeeded : HealthTelemetry
-        data class Active(val heartRateBpm: Int?, val totalSteps: Int?) : HealthTelemetry
-    }
-
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private lateinit var notifMgr: NotificationManager
     private lateinit var engine: WorkoutEngine
     private lateinit var userPrefs: UserPrefsRepository
     private val _states = MutableStateFlow<EngineState>(EngineState.Idle(null))
     fun states(): StateFlow<EngineState> = _states.asStateFlow()
-    private val healthTelemetryState = MutableStateFlow<HealthTelemetry>(HealthTelemetry.Inactive)
-    fun healthTelemetry(): StateFlow<HealthTelemetry> = healthTelemetryState.asStateFlow()
     private var audioEnabled = true
     private var tts: TextToSpeech? = null
     @Volatile private var ttsReady = false
@@ -137,11 +125,6 @@ class WorkoutService : Service() {
     private val history: HistoryRepository by lazy {
         HistoryRepository.from(applicationContext)
     }
-    private val healthManager by lazy { HealthConnectManager(applicationContext) }
-    private var healthJob: Job? = null
-    private var healthConnectEnabled = false
-    private var workoutStartInstant: Instant? = null
-    private var latestHealthSummary: HealthSummary = HealthSummary()
 
     inner class LocalBinder : Binder() {
         fun service(): WorkoutService = this@WorkoutService
@@ -249,17 +232,6 @@ class WorkoutService : Service() {
                 Log.d(TAG, "preRollEnabled=$preRollEnabled (persisted)")
             }
         }
-        scope.launch {
-            userPrefs.healthConnectEnabledFlow.collect { enabled ->
-                healthConnectEnabled = enabled
-                if (!enabled) {
-                    stopHealthCollection(resetSummary = true)
-                    healthTelemetryState.value = HealthTelemetry.Inactive
-                } else {
-                    refreshHealthStatus()
-                }
-            }
-        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -333,11 +305,9 @@ class WorkoutService : Service() {
         timerJob?.cancel()
         timerJob = null
         preRollJob?.cancel()
-        stopHealthCollection(resetSummary = false)
         if (!hasPersisted && engine.isStarted()) {
             val session = engine.finishNow()
             persistOnce(session)
-            resetHealthTelemetryAfterSession()
         }
         stopForeground(STOP_FOREGROUND_REMOVE)
         notifMgr.cancel(NOTIF_ID)
@@ -403,7 +373,6 @@ class WorkoutService : Service() {
         currentSessionId = engine.currentSessionId()
         publishState()
         startTimer()
-        beginHealthCollectionIfPossible()
         updateNotification()
         onTickAnnounce()
         Log.d(TAG, "started workout='${w.name}' blocks=${w.blocks.size}")
@@ -540,11 +509,9 @@ class WorkoutService : Service() {
         timerJob = null
         preRollJob?.cancel()
         val session = if (engine.isStarted()) engine.finishNow() else null
-        stopHealthCollection(resetSummary = session == null)
         if (session != null) {
             persistOnce(session)
         }
-        resetHealthTelemetryAfterSession()
         stopForeground(STOP_FOREGROUND_REMOVE)
         notifMgr.cancel(NOTIF_ID)
         publishState(EngineState.Idle(null))
@@ -556,9 +523,7 @@ class WorkoutService : Service() {
         if (hasPersisted && currentSessionId == session.id) return
         hasPersisted = true
         currentSessionId = session.id
-        val enriched = attachHealthSummary(session)
-        latestHealthSummary = HealthSummary()
-        runBlocking { history.insertIgnore(enriched) }
+        runBlocking { history.insertIgnore(session) }
     }
 
     private fun ensureChannel() {
@@ -663,116 +628,6 @@ class WorkoutService : Service() {
 
     private fun publishState(state: EngineState = engine.current()) {
         _states.value = state
-    }
-
-    private fun beginHealthCollectionIfPossible() {
-        if (!healthConnectEnabled) {
-            healthTelemetryState.value = HealthTelemetry.Inactive
-            return
-        }
-        healthJob?.cancel()
-        healthJob = scope.launch {
-            when (determineHealthAvailability()) {
-                HealthConnectAvailability.NOT_INSTALLED -> {
-                    healthTelemetryState.value = HealthTelemetry.Inactive
-                    return@launch
-                }
-                HealthConnectAvailability.INSTALLED_NO_PERMISSION -> {
-                    healthTelemetryState.value = HealthTelemetry.PermissionsNeeded
-                    return@launch
-                }
-                HealthConnectAvailability.READY -> Unit
-            }
-            workoutStartInstant = Instant.now()
-            latestHealthSummary = HealthSummary()
-            healthTelemetryState.value = HealthTelemetry.Active(null, null)
-            collectHealthSnapshot()
-            while (isActive) {
-                delay(15_000)
-                collectHealthSnapshot()
-            }
-        }
-    }
-
-    private fun stopHealthCollection(resetSummary: Boolean) {
-        healthJob?.cancel()
-        healthJob = null
-        workoutStartInstant = null
-        if (resetSummary) {
-            latestHealthSummary = HealthSummary()
-        }
-    }
-
-    private suspend fun collectHealthSnapshot() {
-        if (workoutStartInstant == null) return
-        val summary = HealthSummary()
-        latestHealthSummary = summary
-        if (healthConnectEnabled) {
-            healthTelemetryState.value = HealthTelemetry.Active(
-                summary.averageHeartRateBpm,
-                summary.totalSteps
-            )
-        }
-    }
-
-    private fun resetHealthTelemetryAfterSession() {
-        scope.launch {
-            if (!healthConnectEnabled) {
-                healthTelemetryState.value = HealthTelemetry.Inactive
-                return@launch
-            }
-            when (determineHealthAvailability()) {
-                HealthConnectAvailability.NOT_INSTALLED ->
-                    healthTelemetryState.value = HealthTelemetry.Inactive
-                HealthConnectAvailability.INSTALLED_NO_PERMISSION ->
-                    healthTelemetryState.value = HealthTelemetry.PermissionsNeeded
-                HealthConnectAvailability.READY ->
-                    healthTelemetryState.value = HealthTelemetry.Inactive
-            }
-        }
-    }
-
-    private suspend fun refreshHealthStatus() {
-        if (!healthConnectEnabled) {
-            healthTelemetryState.value = HealthTelemetry.Inactive
-            return
-        }
-        when (determineHealthAvailability()) {
-            HealthConnectAvailability.NOT_INSTALLED -> {
-                healthTelemetryState.value = HealthTelemetry.Inactive
-            }
-            HealthConnectAvailability.INSTALLED_NO_PERMISSION -> {
-                healthTelemetryState.value = HealthTelemetry.PermissionsNeeded
-            }
-            HealthConnectAvailability.READY -> {
-                if (healthJob == null) {
-                    healthTelemetryState.value = HealthTelemetry.Inactive
-                }
-            }
-        }
-    }
-
-    private suspend fun determineHealthAvailability(): HealthConnectAvailability {
-        if (!healthManager.isInstalled()) {
-            return HealthConnectAvailability.NOT_INSTALLED
-        }
-        val hasPermissions = healthManager.hasAll()
-        return if (hasPermissions) {
-            HealthConnectAvailability.READY
-        } else {
-            HealthConnectAvailability.INSTALLED_NO_PERMISSION
-        }
-    }
-
-    private fun attachHealthSummary(session: Session): Session {
-        val summary = latestHealthSummary
-        if (summary.averageHeartRateBpm == null && summary.totalSteps == null) {
-            return session
-        }
-        return session.copy(
-            avgHr = summary.averageHeartRateBpm ?: session.avgHr,
-            totalSteps = summary.totalSteps ?: session.totalSteps
-        )
     }
 
     private fun formatDuration(seconds: Int): String {

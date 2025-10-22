@@ -25,14 +25,10 @@ class UserPrefsRepository private constructor(private val ctx: Context) {
         val QUICK_EASY = doublePreferencesKey("quick_easy")
         val QUICK_HARD = doublePreferencesKey("quick_hard")
         val QUICK_MINUTES = intPreferencesKey("quick_minutes")
-        val HEALTH_CONNECT_ENABLED = booleanPreferencesKey("health_connect_enabled")
     }
 
     val audioMutedFlow: Flow<Boolean> =
         ctx.userPrefs.data.map { it[Keys.AUDIO_MUTED] ?: false }
-
-    val healthConnectEnabledFlow: Flow<Boolean> =
-        ctx.userPrefs.data.map { it[Keys.HEALTH_CONNECT_ENABLED] ?: false }
 
     val quickStartConfigFlow: Flow<QuickStartConfig> = ctx.userPrefs.data.map { prefs ->
         QuickStartConfig(
@@ -72,12 +68,6 @@ class UserPrefsRepository private constructor(private val ctx: Context) {
 
     suspend fun setQuickStartConfig(config: QuickStartConfig) {
         updateQuickStartConfig { config }
-    }
-
-    suspend fun setHealthConnectEnabled(enabled: Boolean) {
-        ctx.userPrefs.edit { prefs ->
-            prefs[Keys.HEALTH_CONNECT_ENABLED] = enabled
-        }
     }
 
     companion object {

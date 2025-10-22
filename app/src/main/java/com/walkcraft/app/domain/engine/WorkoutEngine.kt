@@ -149,8 +149,7 @@ class WorkoutEngine(
                         endedAt = System.currentTimeMillis(),
                         unit = caps.unit,
                         segments = emptyList(),
-                        workoutName = null,
-                        totalSteps = null
+                        workoutName = null
                     ),
                     extraSegment = null,
                     endedAt = System.currentTimeMillis()
@@ -186,8 +185,7 @@ class WorkoutEngine(
             endedAt = endedAt,
             unit = caps.unit,
             segments = completed,
-            workoutName = workout.name,
-            totalSteps = null
+            workoutName = workout.name
         )
         return session
     }

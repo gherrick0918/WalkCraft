@@ -1,20 +1,14 @@
 package com.walkcraft.app.ui.screens
 
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardOptions // <-- FIX: Add this missing import
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -30,35 +24,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
 import com.walkcraft.app.data.prefs.DevicePrefsRepository
 import com.walkcraft.app.data.prefs.DeviceSettings
 import com.walkcraft.app.domain.model.DeviceCapabilities
 import com.walkcraft.app.domain.model.SpeedPolicy
 import com.walkcraft.app.domain.model.SpeedUnit
-import com.walkcraft.app.ui.viewmodel.DeviceSetupViewModel
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DeviceSetupScreen(
-    onBack: () -> Unit,
-    vm: DeviceSetupViewModel = hiltViewModel()
-) {
-    LaunchedEffect(Unit) { vm.refreshHealth() }
-    val health by vm.health.collectAsState()
-
-    val launcher = rememberLauncherForActivityResult(
-        contract = vm.hcPermissionContract()
-    ) { /* granted: Set<HealthPermission> */ _ ->
-        vm.refreshHealth()
-    }
-
+fun DeviceSetupScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
     val repo = remember { DevicePrefsRepository.from(ctx) }
     val scope = rememberCoroutineScope()
@@ -105,40 +84,6 @@ fun DeviceSetupScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text("Configure unit and your pad’s speeds. Saved to device (DataStore).")
-
-            Spacer(Modifier.height(8.dp))
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors()
-            ) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("Health Connect", style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(8.dp))
-                    when {
-                        health.checking -> Text("Checking permissions…")
-                        !health.available -> Text("Not installed on this device")
-                        health.granted -> Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Granted")
-                            TextButton(onClick = vm::refreshHealth) { Text("Re-check") }
-                        }
-                        else -> Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Permission required")
-                            Button(onClick = { launcher.launch(vm.hcRequired()) }) {
-                                Text("Grant")
-                            }
-                        }
-                    }
-                }
-            }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = unit == SpeedUnit.MPH, onClick = { unit = SpeedUnit.MPH }, label = { Text("MPH") })

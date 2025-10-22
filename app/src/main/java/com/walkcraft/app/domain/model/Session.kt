@@ -16,6 +16,5 @@ data class Session(
     val segments: List<CompletedSegment>,
     val notes: String? = null,
     val avgHr: Int? = null,
-    val totalSteps: Int? = null,
     val workoutName: String? = null
 )
