@@ -5,9 +5,12 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContract
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -54,13 +57,18 @@ fun HealthConnectPermissionCard(
         }
     }
 
-    val permissionLauncher = rememberLauncherForActivityResult<Set<HealthPermission>, Set<HealthPermission>>(
+    // FIX: Explicitly specify the type arguments for rememberLauncherForActivityResult
+    val permissionLauncher = rememberLauncherForActivityResult<Set<String>, Set<String>>(
         contract = PermissionController.createRequestPermissionResultContract()
-    ) { grantedSet: Set<HealthPermission> -> // The type here is now inferred correctly
+    ) { grantedPermissions ->
         loading = false
-        granted = grantedSet.containsAll(requiredPermissions)
+        // The HealthPermission class represents permissions as strings.
+        // We check if the returned set of granted permission strings contains all we require.
+        val requiredPermissionStrings = requiredPermissions.map { it.toString() }.toSet()
+        granted = grantedPermissions.containsAll(requiredPermissionStrings)
         onPermissionsChanged(granted)
     }
+
 
     Card(modifier = modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
@@ -80,14 +88,15 @@ fun HealthConnectPermissionCard(
 
             Spacer(Modifier.height(12.dp))
 
-            val (buttonText, onClick): Pair<String, () -> Unit> = when (sdkStatus) {
+            val (buttonText, onClick) = when (sdkStatus) {
                 HealthConnectClient.SDK_AVAILABLE -> {
                     if (granted) {
                         "Granted" to ({ /* no-op */ })
                     } else {
                         "Grant" to ({
                             loading = true
-                            permissionLauncher.launch(requiredPermissions)
+                            // The contract expects a Set<String>
+                            permissionLauncher.launch(requiredPermissions.map { it.toString() }.toSet())
                         })
                     }
                 }
