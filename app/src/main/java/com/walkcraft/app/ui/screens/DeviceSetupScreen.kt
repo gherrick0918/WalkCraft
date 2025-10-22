@@ -55,7 +55,7 @@ fun DeviceSetupScreen(
 
     val launcher = rememberLauncherForActivityResult(
         contract = vm.hcPermissionContract()
-    ) { _ ->
+    ) { /* granted: Set<HealthPermission> */ _ ->
         vm.refreshHealth()
     }
 
@@ -132,7 +132,7 @@ fun DeviceSetupScreen(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text("Permission required")
-                            Button(onClick = { launcher.launch(vm.hcRequiredPermissions()) }) {
+                            Button(onClick = { launcher.launch(vm.hcRequired()) }) {
                                 Text("Grant")
                             }
                         }
