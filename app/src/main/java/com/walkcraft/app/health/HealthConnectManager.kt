@@ -20,7 +20,8 @@ class HealthConnectManager @Inject constructor(@ApplicationContext private val c
     private val client by lazy { HealthConnectClient.getOrCreate(context) }
     private val perms get() = client.permissionController
 
-    val requiredPermissions: Set<HealthPermission> = setOf(
+    // Corrected line: Changed the type from Set<HealthPermission> to Set<String>
+    val requiredPermissions: Set<String> = setOf(
         HealthPermission.getReadPermission(StepsRecord::class),
         HealthPermission.getReadPermission(HeartRateRecord::class),
     )
@@ -37,6 +38,7 @@ class HealthConnectManager @Inject constructor(@ApplicationContext private val c
     suspend fun hasAll(): Boolean =
         perms.getGrantedPermissions().containsAll(requiredPermissions)
 
+    // Important: Update the contract's generic type to <Set<String>, Set<String>> as well
     fun requestPermissionsContract() =
         PermissionController.createRequestPermissionResultContract()
 
