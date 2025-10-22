@@ -1,52 +1,46 @@
 package com.walkcraft.app.health
 
 import android.content.Context
-import androidx.activity.result.contract.ActivityResultContract
+import android.content.Intent
+import android.net.Uri
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.StepsRecord
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import jakarta.inject.Singleton
 
+enum class HcStatus { AVAILABLE, UPDATE_REQUIRED, NOT_INSTALLED, NOT_SUPPORTED }
+
 @Singleton
 class HealthConnectManager @Inject constructor(@ApplicationContext private val context: Context) {
 
-    private val healthConnectClient: HealthConnectClient? by lazy {
-        // Check if the Health Connect SDK is available on the device.
-        if (HealthConnectClient.getSdkStatus(context) == HealthConnectClient.SDK_UNAVAILABLE) {
-            null
-        } else {
-            HealthConnectClient.getOrCreate(context)
-        }
-    }
+    private val client by lazy { HealthConnectClient.getOrCreate(context) }
+    private val perms get() = client.permissionController
 
-    // --- FIX: Change the type from Set<HealthPermission> to Set<String> ---
-    val permissions: Set<String> = setOf(
+    val requiredPermissions: Set<HealthPermission> = setOf(
         HealthPermission.getReadPermission(StepsRecord::class),
-        HealthPermission.getWritePermission(StepsRecord::class)
-        // TODO: Add any other permissions your app requires here.
+        HealthPermission.getReadPermission(HeartRateRecord::class),
     )
 
-    /**
-     * Returns the availability status of the Health Connect SDK.
-     */
-    fun getSdkStatus(): Int = HealthConnectClient.getSdkStatus(context)
-
-    /**
-     * Creates an ActivityResultContract to request Health Connect permissions.
-     */
-    fun requestPermissionsContract(): ActivityResultContract<Set<String>, Set<String>> {
-        return PermissionController.createRequestPermissionResultContract()
+    fun status(): HcStatus = when (
+        HealthConnectClient.getSdkStatus(context, "com.google.android.apps.healthdata")
+    ) {
+        HealthConnectClient.SDK_AVAILABLE -> HcStatus.AVAILABLE
+        HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> HcStatus.UPDATE_REQUIRED
+        HealthConnectClient.SDK_UNAVAILABLE -> HcStatus.NOT_INSTALLED
+        else -> HcStatus.NOT_SUPPORTED
     }
 
-    /**
-     * Determines if all the required permissions have been granted by the user.
-     */
-    suspend fun hasAllPermissions(): Boolean {
-        // The getGrantedPermissions() method now returns Set<String>, so this comparison works correctly.
-        return healthConnectClient?.permissionController?.getGrantedPermissions()
-            ?.containsAll(permissions) == true
-    }
+    suspend fun hasAll(): Boolean =
+        perms.getGrantedPermissions().containsAll(requiredPermissions)
+
+    fun requestPermissionsContract() =
+        PermissionController.createRequestPermissionResultContract()
+
+    fun playStoreIntent(): Intent =
+        Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.google.android.apps.healthdata"))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 }

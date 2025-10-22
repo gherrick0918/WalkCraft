@@ -1,10 +1,9 @@
 package com.walkcraft.app.ui.viewmodel
 
 import android.app.Application
-import androidx.health.connect.client.HealthConnectClient
-import androidx.health.connect.client.permission.HealthPermission
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.walkcraft.app.health.HcStatus
 import com.walkcraft.app.health.HealthConnectManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -18,30 +17,32 @@ class DeviceSetupViewModel @Inject constructor(
     private val hc: HealthConnectManager
 ) : AndroidViewModel(app) {
 
-    data class HealthUi(
-        val installed: Boolean = false,
-        val granted: Boolean = false,
-        val checking: Boolean = false
-    )
-
     private val _health = MutableStateFlow(HealthUi())
     val health: StateFlow<HealthUi> = _health
 
-    fun hcRequiredPermissions(): Set<String> = hc.permissions
+    fun hcRequiredPermissions() = hc.requiredPermissions
     fun hcRequestContract() = hc.requestPermissionsContract()
+    fun hcPlayStoreIntent() = hc.playStoreIntent()
 
     fun refreshHealth() {
-        val status = hc.getSdkStatus()
-        // Available/installed if status != SDK_UNAVAILABLE (we treat UPDATE_REQUIRED as “installed” for now)
-        val isInstalled = status != HealthConnectClient.SDK_UNAVAILABLE
-        if (!isInstalled) {
-            _health.value = HealthUi(installed = false, granted = false, checking = false)
-            return
-        }
-        _health.value = HealthUi(installed = true, granted = false, checking = true)
-        viewModelScope.launch {
-            val ok = hc.hasAllPermissions()
-            _health.value = HealthUi(installed = true, granted = ok, checking = false)
+        val st = hc.status()
+        when (st) {
+            HcStatus.NOT_INSTALLED, HcStatus.UPDATE_REQUIRED, HcStatus.NOT_SUPPORTED -> {
+                _health.value = HealthUi(status = st, granted = false, checking = false)
+            }
+            HcStatus.AVAILABLE -> {
+                _health.value = HealthUi(status = st, granted = false, checking = true)
+                viewModelScope.launch {
+                    val ok = hc.hasAll()
+                    _health.value = HealthUi(status = st, granted = ok, checking = false)
+                }
+            }
         }
     }
 }
+
+data class HealthUi(
+    val status: HcStatus = HcStatus.NOT_INSTALLED,
+    val granted: Boolean = false,
+    val checking: Boolean = false
+)

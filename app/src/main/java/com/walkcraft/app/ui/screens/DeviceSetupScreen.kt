@@ -1,5 +1,6 @@
 package com.walkcraft.app.ui.screens
 
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -39,6 +40,7 @@ import com.walkcraft.app.data.prefs.DeviceSettings
 import com.walkcraft.app.domain.model.DeviceCapabilities
 import com.walkcraft.app.domain.model.SpeedPolicy
 import com.walkcraft.app.domain.model.SpeedUnit
+import com.walkcraft.app.health.HcStatus
 import com.walkcraft.app.ui.viewmodel.DeviceSetupViewModel
 import kotlinx.coroutines.launch
  
@@ -195,6 +197,7 @@ fun DeviceSetupScreen(onBack: () -> Unit) {
 private fun HealthConnectCard(vm: DeviceSetupViewModel = hiltViewModel()) {
     LaunchedEffect(Unit) { vm.refreshHealth() }
     val state by vm.health.collectAsState()
+    val context = LocalContext.current
     val launcher = rememberLauncherForActivityResult(
         contract = vm.hcRequestContract()
     ) { _ ->
@@ -207,21 +210,55 @@ private fun HealthConnectCard(vm: DeviceSetupViewModel = hiltViewModel()) {
             Spacer(Modifier.height(8.dp))
             when {
                 state.checking -> Text("Checking…")
-                !state.installed -> Text("Not installed")
-                state.granted -> Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("Granted")
-                    TextButton(onClick = vm::refreshHealth) { Text("Re-check") }
+
+                state.status == HcStatus.NOT_SUPPORTED -> {
+                    Text("Not supported on this device/profile.")
                 }
-                else -> Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("Permission required")
-                    Button(onClick = { launcher.launch(vm.hcRequiredPermissions().map { it.toString() }.toSet()) }) {
-                        Text("Grant")
+
+                state.status == HcStatus.NOT_INSTALLED -> {
+                    Text("Not installed in this profile.")
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(onClick = {
+                            // Open Play to install HC in THIS profile
+                            context.startActivity(vm.hcPlayStoreIntent())
+                        }) { Text("Install") }
+                        TextButton(onClick = vm::refreshHealth) { Text("Re-check") }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Tip: If you’re using a Work Profile, Health Connect must be installed in that same profile.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                state.status == HcStatus.UPDATE_REQUIRED -> {
+                    Text("Update required.")
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(onClick = {
+                            context.startActivity(vm.hcPlayStoreIntent())
+                        }) { Text("Update") }
+                        TextButton(onClick = vm::refreshHealth) { Text("Re-check") }
+                    }
+                }
+
+                state.status == HcStatus.AVAILABLE && state.granted -> {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Granted")
+                        TextButton(onClick = vm::refreshHealth) { Text("Re-check") }
+                    }
+                }
+
+                state.status == HcStatus.AVAILABLE && !state.granted -> {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Permission required")
+                        Button(onClick = {
+                            // Launch typed permission flow
+                            launcher.launch(vm.hcRequiredPermissions())
+                            // optional debug toast:
+                            Toast.makeText(context, "Requesting Health Connect permissions…", Toast.LENGTH_SHORT).show()
+                        }) { Text("Grant") }
                     }
                 }
             }
