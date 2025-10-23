@@ -10,14 +10,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider // FIX: Import HorizontalDivider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Card
-import androidx.compose.material3.Divider
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -39,7 +40,6 @@ import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.StepsRecord
 import com.walkcraft.app.data.prefs.DevicePrefsRepository
-import com.walkcraft.app.data.prefs.QuickStartConfig
 import com.walkcraft.app.data.prefs.UserPrefsRepository
 import com.walkcraft.app.domain.model.DeviceCapabilities
 import com.walkcraft.app.domain.plan.Plans
@@ -52,6 +52,7 @@ import kotlinx.coroutines.launch
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.walkcraft.app.data.prefs.QuickStartConfig
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -85,7 +86,8 @@ fun HomeScreen(
         Column(
             modifier = Modifier
                 .padding(inner)
-                .padding(16.dp),
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()), // Make the Column scrollable
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
@@ -406,7 +408,7 @@ fun HealthConnectPermissionCard(appContext: android.content.Context) {
             }
 
             Spacer(Modifier.height(8.dp))
-            Text("Session steps: ${'$'}{session.sessionSteps}")
+            Text("Session steps: ${session.sessionSteps}")
 
             val mins = (session.elapsedMs / 1000 / 60)
             val secs = (session.elapsedMs / 1000 % 60)
