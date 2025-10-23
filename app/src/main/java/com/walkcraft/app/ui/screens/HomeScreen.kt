@@ -290,9 +290,10 @@ fun HealthConnectPermissionCard(appContext: android.content.Context) {
                         else msg = "Grant permissions first"
                     }
                 }) { Text("Refresh Today") }
+            }
 
+            Row {
                 var last7 by remember { mutableStateOf<List<Pair<java.time.LocalDate, Long>>>(emptyList()) }
-                Spacer(Modifier.width(12.dp))
                 Button(onClick = {
                     scope.launch {
                         if (HealthConnectHelper.hasAllPermissions(hcClient)) {
@@ -303,9 +304,14 @@ fun HealthConnectPermissionCard(appContext: android.content.Context) {
 
                 if (last7.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
-                    Text("Last 7 days:")
-                    last7.forEach { (date, steps) ->
-                        Text("${date.toString()}: $steps")
+                    Text("Last 7 days:\n")
+                    last7.forEachIndexed { index, (date, steps) ->
+                        val text = if (index < last7.lastIndex) {
+                            "${date.toString()}: $steps\n"
+                        } else {
+                            "${date.toString()}: $steps"
+                        }
+                        Text(text)
                     }
                 }
             }
