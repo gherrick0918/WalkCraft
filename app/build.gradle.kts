@@ -43,6 +43,8 @@ dependencies {
     implementation(libs.androidx.health.connect)
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation(libs.androidx.health.connect)
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.6")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
 
     // Add this for local unit tests
     testImplementation(kotlin("test"))
