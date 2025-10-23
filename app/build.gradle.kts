@@ -39,12 +39,12 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
-    implementation(libs.androidx.navigation.compose)
+    implementation("androidx.navigation:navigation-compose:2.7.7")
     implementation(libs.androidx.health.connect)
     implementation("androidx.datastore:datastore-preferences:1.1.1")
-    implementation(libs.androidx.health.connect)
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.6")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
 
     // Add this for local unit tests
     testImplementation(kotlin("test"))
