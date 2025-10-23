@@ -17,6 +17,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider // FIX: Import HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Card
+import androidx.compose.material3.Divider
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -43,9 +44,11 @@ import com.walkcraft.app.data.prefs.UserPrefsRepository
 import com.walkcraft.app.domain.model.DeviceCapabilities
 import com.walkcraft.app.domain.plan.Plans
 import com.walkcraft.app.health.HealthConnectHelper
+import com.walkcraft.app.health.StepSessionState
 import com.walkcraft.app.service.WorkoutService
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -221,6 +224,40 @@ fun HealthConnectPermissionCard(appContext: android.content.Context) {
     val hcClient = remember { HealthConnectHelper.client(appContext) }
 
     var stepsToday by remember { mutableStateOf<Long?>(null) }
+
+    // ---- Session state ----
+    var session by remember { mutableStateOf(StepSessionState()) }
+    var pollJob by remember { mutableStateOf<Job?>(null) }
+    val POLL_INTERVAL_MS = 5_000L
+    val AUTO_STOP_MINUTES = 120L
+
+    fun stopPolling() {
+        pollJob?.cancel()
+        pollJob = null
+    }
+
+    fun startPolling() {
+        stopPolling()
+        pollJob = scope.launch {
+            while (true) {
+                val elapsedMin = session.elapsedMs / 1000 / 60
+                if (!session.active || elapsedMin >= AUTO_STOP_MINUTES) {
+                    session = session.copy(active = false)
+                    stopPolling()
+                    break
+                }
+
+                val has = HealthConnectHelper.hasAllPermissions(hcClient)
+                if (has) {
+                    val current = HealthConnectHelper.readTodaySteps(hcClient)
+                    session = session.copy(latestSteps = current)
+                    stepsToday = current
+                }
+                delay(POLL_INTERVAL_MS)
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         // If the user already granted permission earlier, fetch steps immediately.
         val has = HealthConnectHelper.hasAllPermissions(hcClient)
@@ -244,6 +281,10 @@ fun HealthConnectPermissionCard(appContext: android.content.Context) {
         val lifecycle = lifecycleOwner.lifecycle
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { stopPolling() }
     }
 
     var msg by remember { mutableStateOf<String?>(null) }
@@ -314,6 +355,65 @@ fun HealthConnectPermissionCard(appContext: android.content.Context) {
                         )
                     }
                 }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            Divider()
+            Spacer(Modifier.height(12.dp))
+            Text("Session", style = MaterialTheme.typography.titleMedium)
+
+            Row {
+                Button(
+                    onClick = {
+                        scope.launch {
+                            val has = HealthConnectHelper.hasAllPermissions(hcClient)
+                            if (!has) {
+                                msg = "Grant permissions first"
+                                return@launch
+                            }
+                            val current = HealthConnectHelper.readTodaySteps(hcClient)
+                            session = StepSessionState(
+                                active = true,
+                                startEpochMs = System.currentTimeMillis(),
+                                baselineSteps = current,
+                                latestSteps = current
+                            )
+                            startPolling()
+                        }
+                    },
+                    enabled = !session.active
+                ) { Text("Start") }
+
+                Spacer(Modifier.width(12.dp))
+
+                Button(
+                    onClick = {
+                        session = session.copy(active = false)
+                        stopPolling()
+                    },
+                    enabled = session.active
+                ) { Text("Stop") }
+
+                Spacer(Modifier.width(12.dp))
+
+                Button(
+                    onClick = {
+                        session = StepSessionState()
+                        stopPolling()
+                    },
+                    enabled = !session.active && (session.baselineSteps != 0L || session.latestSteps != 0L)
+                ) { Text("Reset") }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            Text("Session steps: ${'$'}{session.sessionSteps}")
+
+            val mins = (session.elapsedMs / 1000 / 60)
+            val secs = (session.elapsedMs / 1000 % 60)
+            if (session.active) {
+                Text("Elapsed: %d:%02d".format(mins, secs))
+            } else if (session.sessionSteps > 0L) {
+                Text("Elapsed: %d:%02d (stopped)".format(mins, secs))
             }
 
             Spacer(Modifier.height(8.dp))
