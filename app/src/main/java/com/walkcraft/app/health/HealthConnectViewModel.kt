@@ -2,8 +2,6 @@ package com.walkcraft.app.health
 
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
-import androidx.health.connect.client.records.HeartRateRecord
-import androidx.health.connect.client.records.StepsRecord
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -19,26 +17,28 @@ class HealthConnectViewModel @Inject constructor(
 
     data class UiState(
         val hasAllPermissions: Boolean = false,
-        val granted: Set<String> = emptySet()
+        val granted: Set<HealthPermission> = emptySet()
     )
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState
 
-    val requiredPermissions: Set<String> = setOf(
-        HealthPermission.getReadPermission(StepsRecord::class),
-        HealthPermission.getReadPermission(HeartRateRecord::class)
-    )
+    /** Single source of truth for the required set. */
+    val requiredPermissions: Set<HealthPermission> = HealthConnectManager.requiredPermissions
 
     fun refresh() = viewModelScope.launch {
         val granted = client.permissionController.getGrantedPermissions()
         _uiState.value = UiState(
-            hasAllPermissions = requiredPermissions.all { it in granted },
+            hasAllPermissions = granted.containsAll(requiredPermissions),
             granted = granted
         )
     }
 
-    fun onPermissionsResult(@Suppress("UNUSED_PARAMETER") granted: Set<String>) {
-        refresh()
+    /** Called by the UI after the sheet returns. */
+    fun onPermissionsResult(granted: Set<HealthPermission>) {
+        _uiState.value = UiState(
+            hasAllPermissions = granted.containsAll(requiredPermissions),
+            granted = granted
+        )
     }
 }

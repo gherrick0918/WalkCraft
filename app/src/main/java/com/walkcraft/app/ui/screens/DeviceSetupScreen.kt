@@ -49,7 +49,8 @@ import com.walkcraft.app.domain.model.SpeedUnit
 import com.walkcraft.app.health.HealthConnectViewModel
 import com.walkcraft.app.ui.screens.HealthConnectPermissionCard
 import kotlinx.coroutines.launch
- 
+import androidx.health.connect.client.permission.HealthPermission
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DeviceSetupScreen(
@@ -68,7 +69,7 @@ fun DeviceSetupScreen(
 
     val permissionLauncher = rememberLauncherForActivityResult(
         PermissionController.createRequestPermissionResultContract()
-    ) { newlyGranted: Set<String> ->
+    ) { newlyGranted: Set<HealthPermission> ->
         hcVm.onPermissionsResult(newlyGranted)
     }
 
@@ -268,9 +269,7 @@ private fun HealthConnectCard(
                     Button(
                         enabled = !uiState.hasAllPermissions,
                         onClick = onGrantClick
-                    ) {
-                        Text("Grant")
-                    }
+                    ) { Text("Grant") }
                 }
             }
         }

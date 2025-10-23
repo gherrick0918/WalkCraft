@@ -4,7 +4,6 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.provider.Settings
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
@@ -14,47 +13,38 @@ import androidx.health.connect.client.records.StepsRecord
 
 object HealthConnectManager {
 
-    /** Minimal read set for MVP (expand later as needed). */
-    val requiredPermissions: Set<String> = setOf(
+    /** Typed permissions we need for MVP. */
+    val requiredPermissions: Set<HealthPermission> = setOf(
         HealthPermission.getReadPermission(StepsRecord::class),
-        HealthPermission.getReadPermission(HeartRateRecord::class)
+        HealthPermission.getReadPermission(HeartRateRecord::class),
     )
 
-    // NEW: Define the provider package name for the Play Store.
-    private const val providerPackageName = "com.google.android.apps.healthdata"
+    private const val PROVIDER = "com.google.android.apps.healthdata"
 
-    // UPDATED: sdkStatus now requires the provider package name.
+    /** Status of Health Connect provider in THIS profile. */
     fun sdkStatus(context: Context): Int =
-        HealthConnectClient.getSdkStatus(context, providerPackageName)
+        HealthConnectClient.getSdkStatus(context, PROVIDER)
 
-    /**
-     * Open the Play Store (or app details) to install/update the provider.
-     */
-    fun openInstallOrUpdate(context: Context) {
-        val marketUri = Uri.parse("market://details?id=$providerPackageName")
-        val webUri = Uri.parse("https://play.google.com/store/apps/details?id=$providerPackageName")
+    /** Correct ActivityResult contract for requesting HC permissions (typed). */
+    fun permissionContract():
+            ActivityResultContract<Set<HealthPermission>, Set<HealthPermission>> =
+        PermissionController.createRequestPermissionResultContract()
+
+    /** Open Play Store to install/update the provider. */
+    fun openProviderOnPlay(context: Context) {
+        val market = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$PROVIDER"))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         try {
-            context.startActivity(Intent(Intent.ACTION_VIEW, marketUri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            context.startActivity(market)
         } catch (_: ActivityNotFoundException) {
-            context.startActivity(Intent(Intent.ACTION_VIEW, webUri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            context.startActivity(
+                Intent(
+                    Intent.ACTION_VIEW,
+                    Uri.parse("https://play.google.com/store/apps/details?id=$PROVIDER")
+                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
         }
     }
-
-    /**
-     * Open Health Connect’s App Info (useful if the user needs to toggle something manually).
-     */
-    fun openAppInfo(context: Context) {
-        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-            .setData(Uri.fromParts("package", providerPackageName, null))
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(intent)
-    }
-
-    /**
-     * Compose/Activity uses this to build the ActivityResult contract.
-     */
-    fun permissionContract(): ActivityResultContract<Set<String>, Set<String>> =
-        PermissionController.createRequestPermissionResultContract()
 
     fun client(context: Context): HealthConnectClient =
         HealthConnectClient.getOrCreate(context)
