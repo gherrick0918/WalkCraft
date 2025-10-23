@@ -40,8 +40,9 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.navigation.compose)
+    implementation("androidx.compose.material:material-icons-extended:1.9.0")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
-    implementation(libs.androidx.health.connect.client)
+    implementation(libs.androidx.health.connect)
     implementation("jakarta.inject:jakarta.inject-api:2.0.1")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.4")
 

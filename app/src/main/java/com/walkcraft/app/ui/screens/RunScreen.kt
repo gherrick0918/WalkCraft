@@ -4,10 +4,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -99,7 +103,11 @@ private fun RunningPanel(state: RunUiState.Running, vm: RunViewModel) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(onClick = vm::pause) { Text("Pause") }
             Button(onClick = vm::skip) { Text("Skip") }
-            Button(onClick = vm::stop) { Text("Stop") }
+            Button(onClick = vm::stop) {
+                Icon(Icons.Filled.Stop, contentDescription = "Stop")
+                Spacer(Modifier.width(8.dp))
+                Text("Stop")
+            }
         }
     }
 }
@@ -110,8 +118,16 @@ private fun PausedPanel(state: RunUiState.Paused, vm: RunViewModel) {
         Text(state.blockLabel, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
         Text(state.remaining, style = MaterialTheme.typography.displayLarge, textAlign = TextAlign.Center)
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onClick = vm::resume) { Text("Resume") }
-            Button(onClick = vm::stop) { Text("Stop") }
+            Button(onClick = vm::resume) {
+                Icon(Icons.Filled.PlayArrow, contentDescription = "Resume")
+                Spacer(Modifier.width(8.dp))
+                Text("Resume")
+            }
+            Button(onClick = vm::stop) {
+                Icon(Icons.Filled.Stop, contentDescription = "Stop")
+                Spacer(Modifier.width(8.dp))
+                Text("Stop")
+            }
         }
     }
 }

@@ -40,7 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.HealthConnectClient
-import androidx.health.connect.client.PermissionController
+import androidx.health.connect.client.permission.HealthPermission
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -70,6 +70,7 @@ fun DeviceSetupScreen(
     val repo = remember { DevicePrefsRepository.from(context) }
     val scope = rememberCoroutineScope()
     val snack = remember { SnackbarHostState() }
+    val healthConnectManager = remember { HealthConnectManager(context) }
 
     val settings by repo.settingsFlow.collectAsState(initial = null)
     val hcUi by hcVm.ui.collectAsStateWithLifecycle()
@@ -80,10 +81,11 @@ fun DeviceSetupScreen(
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
-        PermissionController.createRequestPermissionResultContract()
-    ) { granted ->
+        contract = healthConnectManager.permissionRequestContract()
+    ) { granted: Set<HealthPermission> ->
         hcVm.onPermissionsResult(granted)
-        val message = if (granted.containsAll(HealthConnectManager.PERMISSIONS)) {
+        hcVm.checkPermissions()
+        val message = if (granted.containsAll(healthConnectManager.requiredPermissions)) {
             "Health Connect permissions granted"
         } else {
             "Some permissions were not granted"
@@ -116,6 +118,9 @@ fun DeviceSetupScreen(
         }
     }
 
+    val status = HealthConnectClient.getSdkStatus(context)
+    val isAvailable = status == HealthConnectClient.SDK_AVAILABLE
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -135,11 +140,20 @@ fun DeviceSetupScreen(
 
             HealthConnectSection(
                 state = hcUi,
-                onRequestPermissions = {
-                    permissionLauncher.launch(HealthConnectManager.PERMISSIONS)
+                status = status,
+                isAvailable = isAvailable,
+                onUnavailable = { unavailableStatus ->
+                    val message = when (unavailableStatus) {
+                        HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_NOT_INSTALLED,
+                        HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_OUTDATED,
+                        HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED ->
+                            "Install or update Health Connect from the Play Store."
+                        else -> "Health Connect is unavailable on this device."
+                    }
+                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
                 },
-                onInstallOrUpdate = {
-                    HealthConnectManager.launchProviderInstall(context)
+                onGrant = {
+                    permissionLauncher.launch(healthConnectManager.requiredPermissions)
                 },
                 onCheckStatus = {
                     hcVm.refreshAvailability()
@@ -247,8 +261,10 @@ fun DeviceSetupScreen(
 @Composable
 private fun HealthConnectSection(
     state: HealthConnectUiState,
-    onRequestPermissions: () -> Unit,
-    onInstallOrUpdate: () -> Unit,
+    status: Int,
+    isAvailable: Boolean,
+    onUnavailable: (Int) -> Unit,
+    onGrant: () -> Unit,
     onCheckStatus: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -263,7 +279,10 @@ private fun HealthConnectSection(
 
             val statusText = when (state.sdkStatus) {
                 HealthConnectClient.SDK_UNAVAILABLE -> "Health Connect unavailable on this device."
-                HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> "Health Connect requires install/update."
+                HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_NOT_INSTALLED,
+                HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_OUTDATED,
+                HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED ->
+                    "Health Connect requires install or update."
                 else -> if (state.hasAllPermissions) "All permissions granted." else "Permissions needed."
             }
             Text(statusText, style = MaterialTheme.typography.bodyMedium)
@@ -272,13 +291,13 @@ private fun HealthConnectSection(
 
             Row {
                 Button(
-                    enabled = state.sdkStatus != HealthConnectClient.SDK_UNAVAILABLE,
+                    enabled = isAvailable,
                     onClick = {
-                        when (state.sdkStatus) {
-                            HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> onInstallOrUpdate()
-                            HealthConnectClient.SDK_UNAVAILABLE -> Unit
-                            else -> onRequestPermissions()
+                        if (status != HealthConnectClient.SDK_AVAILABLE) {
+                            onUnavailable(status)
+                            return@Button
                         }
+                        onGrant()
                     }
                 ) {
                     Text(if (state.hasAllPermissions) "Recheck / Manage" else "Grant")
