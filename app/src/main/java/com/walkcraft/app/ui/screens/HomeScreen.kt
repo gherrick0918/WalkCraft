@@ -1,6 +1,7 @@
 package com.walkcraft.app.ui.screens
 
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,6 +16,7 @@ import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider // FIX: Import HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Card
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -35,6 +37,7 @@ import com.walkcraft.app.data.prefs.QuickStartConfig
 import com.walkcraft.app.data.prefs.UserPrefsRepository
 import com.walkcraft.app.domain.model.DeviceCapabilities
 import com.walkcraft.app.domain.plan.Plans
+import com.walkcraft.app.health.HealthConnectHelper
 import com.walkcraft.app.service.WorkoutService
 import kotlinx.coroutines.launch
 
@@ -96,6 +99,8 @@ fun HomeScreen(
             Button(onClick = onHistory, modifier = Modifier.fillMaxWidth()) {
                 Text("History")
             }
+
+            HealthConnectPermissionCard(ctx)
 
             HorizontalDivider() // FIX: Renamed Divider to HorizontalDivider
 
@@ -196,6 +201,36 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Start Debug Workout")
+            }
+        }
+    }
+}
+
+@Composable
+fun HealthConnectPermissionCard(context: android.content.Context) {
+    val scope = rememberCoroutineScope()
+    val appContext = remember(context) { context.applicationContext }
+    val hcClient = remember { HealthConnectHelper.client(appContext) }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        HealthConnectHelper.permissionContract()
+    ) { _ ->
+        // Optional: handle granted permissions result
+    }
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Health Connect", style = MaterialTheme.typography.titleMedium)
+            Text("Grant permission to read Steps and Heart Rate for workout stats.")
+            Button(onClick = {
+                if (!HealthConnectHelper.ensureAvailableOrLaunchInstall(context)) return@Button
+                scope.launch {
+                    val hasAll = HealthConnectHelper.hasAllPermissions(hcClient)
+                    if (!hasAll) {
+                        HealthConnectHelper.launchPermissionUi(permissionLauncher)
+                    }
+                }
+            }) {
+                Text("Grant Health Connect Permissions")
             }
         }
     }
