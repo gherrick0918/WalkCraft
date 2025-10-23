@@ -5,11 +5,13 @@ plugins {
     id("com.google.dagger.hilt.android")
     // <-- This fixes the 'kapt' unresolved error
     id("org.jetbrains.kotlin.kapt")
+
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {
     namespace = "com.walkcraft.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.walkcraft.app"
@@ -37,11 +39,6 @@ android {
         buildConfig = true
     }
 
-    // Compose compiler that matches Kotlin 2.0.x
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.6.11"
-    }
-
     packaging {
         resources {
             excludes += setOf(
@@ -66,7 +63,7 @@ android {
 
 dependencies {
     // Compose BOM
-    implementation(platform("androidx.compose:compose-bom:2024.10.00"))
+    implementation(platform("androidx.compose:compose-bom:2024.10.01"))
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
@@ -89,6 +86,8 @@ dependencies {
     // Hilt
     implementation("com.google.dagger:hilt-android:2.52")
     kapt("com.google.dagger:hilt-android-compiler:2.52")
+    // Add this line for Hilt and Compose Navigation integration
+    implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
 
     // Health Connect
     implementation("androidx.health.connect:connect-client:1.1.0")
