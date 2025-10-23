@@ -47,7 +47,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
             _session.value.elapsedMs
         }
 
-        _session.value = _session.value.copy(active = false, elapsedMs = elapsed.coerceAtLeast(0))
+        _session.value = _session.value.copy(active = false).ticked()
     }
 
     fun refreshToday() {
@@ -70,8 +70,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
                 startEpochMs = startWallTimeMs,
                 baselineSteps = baseline,
                 latestSteps = baseline,
-                elapsedMs = 0L,
-            )
+            ).ticked()
             _todaySteps.value = baseline
 
             startPolling()
@@ -87,7 +86,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
                 val elapsedMin = TimeUnit.MILLISECONDS.toMinutes(elapsedMs)
 
                 if (!_session.value.active || elapsedMin >= autoStopMinutes) {
-                    _session.value = _session.value.copy(active = false, elapsedMs = elapsedMs.coerceAtLeast(0))
+                    _session.value = _session.value.copy(active = false).ticked()
                     pollJob?.cancel()
                     break
                 }
@@ -95,7 +94,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
                 if (HealthConnectHelper.hasAllPermissions(client)) {
                     val delta = stepsSinceStart() // <- aggregate since startInstant
                     val latest = _session.value.baselineSteps + delta
-                    _session.value = _session.value.copy(latestSteps = latest)
+                    _session.value = _session.value.copy(latestSteps = latest).ticked()
 
                     // keep the “Today’s steps” label up to date (optional but nice)
                     _todaySteps.value = HealthConnectHelper.readTodaySteps(client)
@@ -113,11 +112,11 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
                 if (_session.value.active && HealthConnectHelper.hasAllPermissions(client)) {
                     val delta = stepsSinceStart()
                     val latest = _session.value.baselineSteps + delta
-                    _session.value = _session.value.copy(latestSteps = latest)
+                    _session.value = _session.value.copy(latestSteps = latest).ticked()
                     _todaySteps.value = HealthConnectHelper.readTodaySteps(client)
                     if (pollJob?.isActive != true) startPolling()
                 } else {
-                    _session.value = _session.value.copy(elapsedMs = elapsedMs)
+                    _session.value = _session.value.copy().ticked()
                 }
             } else if (HealthConnectHelper.hasAllPermissions(client)) {
                 _todaySteps.value = HealthConnectHelper.readTodaySteps(client)
@@ -135,5 +134,8 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
         )
         return result[StepsRecord.COUNT_TOTAL] ?: 0L
     }
+
+    fun StepSessionState.ticked(now: Long = System.currentTimeMillis()) =
+        copy(lastTickMs = now)
 }
 
