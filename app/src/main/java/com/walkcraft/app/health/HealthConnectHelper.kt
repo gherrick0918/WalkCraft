@@ -74,4 +74,35 @@ object HealthConnectHelper {
         )
         return resp.records.sumOf { it.count }
     }
+
+    suspend fun readStepsForDate(
+        client: HealthConnectClient,
+        date: LocalDate,
+        zoneId: ZoneId = ZoneId.systemDefault()
+    ): Long {
+        val start = date.atStartOfDay(zoneId).toInstant()
+        val end = start.plus(1, ChronoUnit.DAYS)
+        val resp = client.readRecords(
+            ReadRecordsRequest(
+                recordType = StepsRecord::class,
+                timeRangeFilter = TimeRangeFilter.between(start, end)
+            )
+        )
+        return resp.records.sumOf { it.count }
+    }
+
+    suspend fun readStepsLastNDays(
+        client: HealthConnectClient,
+        days: Int = 7,
+        zoneId: ZoneId = ZoneId.systemDefault()
+    ): List<Pair<LocalDate, Long>> {
+        val today = LocalDate.now(zoneId)
+        val results = mutableListOf<Pair<LocalDate, Long>>()
+        for (i in (days - 1) downTo 0) {
+            val d = today.minusDays(i.toLong())
+            val total = readStepsForDate(client, d, zoneId)
+            results += d to total
+        }
+        return results
+    }
 }

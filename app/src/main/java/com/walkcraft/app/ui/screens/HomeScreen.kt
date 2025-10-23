@@ -22,6 +22,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -45,6 +46,9 @@ import com.walkcraft.app.health.HealthConnectHelper
 import com.walkcraft.app.service.WorkoutService
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -225,6 +229,23 @@ fun HealthConnectPermissionCard(appContext: android.content.Context) {
         }
     }
 
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                scope.launch {
+                    if (HealthConnectHelper.hasAllPermissions(hcClient)) {
+                        stepsToday = HealthConnectHelper.readTodaySteps(hcClient)
+                    }
+                }
+            }
+        }
+        val lifecycle = lifecycleOwner.lifecycle
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
+
     var msg by remember { mutableStateOf<String?>(null) }
 
     val REQUIRED = remember {
@@ -269,6 +290,24 @@ fun HealthConnectPermissionCard(appContext: android.content.Context) {
                         else msg = "Grant permissions first"
                     }
                 }) { Text("Refresh Today") }
+
+                var last7 by remember { mutableStateOf<List<Pair<java.time.LocalDate, Long>>>(emptyList()) }
+                Spacer(Modifier.width(12.dp))
+                Button(onClick = {
+                    scope.launch {
+                        if (HealthConnectHelper.hasAllPermissions(hcClient)) {
+                            last7 = HealthConnectHelper.readStepsLastNDays(hcClient, days = 7)
+                        } else msg = "Grant permissions first"
+                    }
+                }) { Text("Last 7 days") }
+
+                if (last7.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("Last 7 days:")
+                    last7.forEach { (date, steps) ->
+                        Text("${date.toString()}: $steps")
+                    }
+                }
             }
 
             Spacer(Modifier.height(8.dp))
