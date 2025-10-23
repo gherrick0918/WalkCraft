@@ -32,6 +32,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.health.connect.client.PermissionController
+import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.HeartRateRecord
+import androidx.health.connect.client.records.StepsRecord
 import com.walkcraft.app.data.prefs.DevicePrefsRepository
 import com.walkcraft.app.data.prefs.QuickStartConfig
 import com.walkcraft.app.data.prefs.UserPrefsRepository
@@ -111,79 +115,79 @@ fun HomeScreen(
                 ) {
                     Text("Quick Start", style = MaterialTheme.typography.titleMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = easy.toString(),
-                        onValueChange = { text ->
-                            text.toDoubleOrNull()?.let { v ->
-                                easy = v
-                                scope.launch { userPrefs.updateQuickStartConfig { it.copy(easy = v) } }
-                            }
-                        },
-                        label = { Text("Easy speed") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = hard.toString(),
-                        onValueChange = { text ->
-                            text.toDoubleOrNull()?.let { v ->
-                                hard = v
-                                scope.launch { userPrefs.updateQuickStartConfig { it.copy(hard = v) } }
-                            }
-                        },
-                        label = { Text("Hard speed") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = minutes.toString(),
-                        onValueChange = { text ->
-                            text.toIntOrNull()?.let { m ->
-                                val clamped = m.coerceIn(1, 120)
-                                minutes = clamped
-                                scope.launch { userPrefs.updateQuickStartConfig { it.copy(minutes = clamped) } }
-                            }
-                        },
-                        label = { Text("Minutes") },
-                        modifier = Modifier.width(120.dp)
-                    )
-                }
-                val preview = remember(easy, hard, minutes, current) {
-                    current?.let { settings ->
-                        Plans.previewForQuickStart(
-                            easy = easy,
-                            hard = hard,
-                            minutes = minutes,
-                            caps = settings.caps,
-                            policy = settings.policy
+                        OutlinedTextField(
+                            value = easy.toString(),
+                            onValueChange = { text ->
+                                text.toDoubleOrNull()?.let { v ->
+                                    easy = v
+                                    scope.launch { userPrefs.updateQuickStartConfig { it.copy(easy = v) } }
+                                }
+                            },
+                            label = { Text("Easy speed") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = hard.toString(),
+                            onValueChange = { text ->
+                                text.toDoubleOrNull()?.let { v ->
+                                    hard = v
+                                    scope.launch { userPrefs.updateQuickStartConfig { it.copy(hard = v) } }
+                                }
+                            },
+                            label = { Text("Hard speed") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = minutes.toString(),
+                            onValueChange = { text ->
+                                text.toIntOrNull()?.let { m ->
+                                    val clamped = m.coerceIn(1, 120)
+                                    minutes = clamped
+                                    scope.launch { userPrefs.updateQuickStartConfig { it.copy(minutes = clamped) } }
+                                }
+                            },
+                            label = { Text("Minutes") },
+                            modifier = Modifier.width(120.dp)
                         )
                     }
-                }
-                if (preview != null) {
-                    Text(preview, style = MaterialTheme.typography.bodyMedium)
-                } else {
-                    Text(
-                        "Set up your device to preview the plan.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                PreRollToggleRow(preRoll) { enabled ->
-                    preRoll = enabled
-                    scope.launch { userPrefs.updateQuickStartConfig { it.copy(preRoll = enabled) } }
-                }
-                Button(
-                    onClick = {
-                        WorkoutService.startQuick(ctx, minutes, easy, hard)
-                        Toast.makeText(
-                            ctx,
-                            "Starting Quick Start…",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        onRun()
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Start Quick Start")
-                }
+                    val preview = remember(easy, hard, minutes, current) {
+                        current?.let { settings ->
+                            Plans.previewForQuickStart(
+                                easy = easy,
+                                hard = hard,
+                                minutes = minutes,
+                                caps = settings.caps,
+                                policy = settings.policy
+                            )
+                        }
+                    }
+                    if (preview != null) {
+                        Text(preview, style = MaterialTheme.typography.bodyMedium)
+                    } else {
+                        Text(
+                            "Set up your device to preview the plan.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    PreRollToggleRow(preRoll) { enabled ->
+                        preRoll = enabled
+                        scope.launch { userPrefs.updateQuickStartConfig { it.copy(preRoll = enabled) } }
+                    }
+                    Button(
+                        onClick = {
+                            WorkoutService.startQuick(ctx, minutes, easy, hard)
+                            Toast.makeText(
+                                ctx,
+                                "Starting Quick Start…",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            onRun()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Start Quick Start")
+                    }
                 }
             }
 
@@ -207,31 +211,60 @@ fun HomeScreen(
 }
 
 @Composable
-fun HealthConnectPermissionCard(context: android.content.Context) {
+fun HealthConnectPermissionCard(appContext: android.content.Context) {
     val scope = rememberCoroutineScope()
-    val appContext = remember(context) { context.applicationContext }
     val hcClient = remember { HealthConnectHelper.client(appContext) }
-    val permissionLauncher = rememberLauncherForActivityResult(
-        HealthConnectHelper.permissionContract()
-    ) { _ ->
-        // Optional: handle granted permissions result
+
+    var stepsToday by remember { mutableStateOf<Long?>(null) }
+    var msg by remember { mutableStateOf<String?>(null) }
+
+    val REQUIRED = remember {
+        setOf(
+            HealthPermission.getReadPermission(StepsRecord::class),
+            HealthPermission.getReadPermission(HeartRateRecord::class)
+        )
     }
 
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Health Connect", style = MaterialTheme.typography.titleMedium)
-            Text("Grant permission to read Steps and Heart Rate for workout stats.")
-            Button(onClick = {
-                if (!HealthConnectHelper.ensureAvailableOrLaunchInstall(context)) return@Button
-                scope.launch {
-                    val hasAll = HealthConnectHelper.hasAllPermissions(hcClient)
-                    if (!hasAll) {
-                        HealthConnectHelper.launchPermissionUi(permissionLauncher)
-                    }
-                }
-            }) {
-                Text("Grant Health Connect Permissions")
+    val permissionLauncher = rememberLauncherForActivityResult(
+        PermissionController.createRequestPermissionResultContract()
+    ) { granted: Set<String> ->
+        val allGranted = REQUIRED.all { it in granted }
+        msg = if (allGranted) "Permissions granted ✅" else "Not all permissions granted ⚠️"
+        if (allGranted) {
+            scope.launch {
+                stepsToday = HealthConnectHelper.readTodaySteps(hcClient)
             }
+        }
+    }
+
+    Card {
+        Column(Modifier.padding(16.dp)) {
+            Text("Health Connect", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(8.dp))
+            Text("Grant permission to read Steps and Heart Rate, then fetch today’s steps.")
+            Spacer(Modifier.height(12.dp))
+
+            Row {
+                Button(onClick = {
+                    if (!HealthConnectHelper.ensureAvailableOrLaunchInstall(appContext)) return@Button
+                    permissionLauncher.launch(REQUIRED)
+                }) { Text("Grant Permissions") }
+
+                Spacer(Modifier.width(12.dp))
+
+                Button(onClick = {
+                    scope.launch {
+                        // Skip if provider missing; you already have a toast in your optional patch
+                        val has = HealthConnectHelper.hasAllPermissions(hcClient)
+                        if (has) stepsToday = HealthConnectHelper.readTodaySteps(hcClient)
+                        else msg = "Grant permissions first"
+                    }
+                }) { Text("Refresh Today") }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            msg?.let { Text(it) }
+            stepsToday?.let { Text("Today’s steps: $it") }
         }
     }
 }

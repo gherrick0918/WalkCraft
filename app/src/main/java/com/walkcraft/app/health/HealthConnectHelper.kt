@@ -6,9 +6,14 @@ import android.net.Uri
 import androidx.activity.result.ActivityResultLauncher
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
-import androidx.health.connect.client.permissions.HealthPermission
+import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.request.ReadRecordsRequest
+import androidx.health.connect.client.time.TimeRangeFilter
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 
 object HealthConnectHelper {
     // Read-only for MVP
@@ -20,7 +25,8 @@ object HealthConnectHelper {
     /** Returns SDK status and, if needed, launches Play to install/enable provider. */
     fun ensureAvailableOrLaunchInstall(context: Context): Boolean {
         val providerPkg = "com.google.android.apps.healthdata"
-        val status = HealthConnectClient.getSdkStatus(context, providerPkg)
+        // Using default provider name avoids signature drift across minor versions
+        val status = HealthConnectClient.getSdkStatus(context)
         if (status == HealthConnectClient.SDK_UNAVAILABLE) return false
         if (status == HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED) {
             // Open Play with the Health Connect onboarding URL
@@ -47,10 +53,25 @@ object HealthConnectHelper {
     }
 
     fun launchPermissionUi(
-        launcher: ActivityResultLauncher<Set<androidx.health.connect.client.permissions.HealthPermission>>
+        launcher: ActivityResultLauncher<Set<String>>
     ) {
         launcher.launch(REQUIRED_PERMISSIONS)
     }
 
     fun permissionContract() = PermissionController.createRequestPermissionResultContract()
+
+    suspend fun readTodaySteps(
+        client: HealthConnectClient,
+        zoneId: ZoneId = ZoneId.systemDefault()
+    ): Long {
+        val start = LocalDate.now(zoneId).atStartOfDay(zoneId).toInstant()
+        val end = start.plus(1, ChronoUnit.DAYS)
+        val resp = client.readRecords(
+            ReadRecordsRequest(
+                recordType = StepsRecord::class,
+                timeRangeFilter = TimeRangeFilter.between(start, end)
+            )
+        )
+        return resp.records.sumOf { it.count }
+    }
 }
