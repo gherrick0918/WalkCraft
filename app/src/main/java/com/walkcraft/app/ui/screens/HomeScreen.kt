@@ -358,7 +358,7 @@ fun HealthConnectPermissionCard(appContext: android.content.Context) {
             }
 
             Spacer(Modifier.height(16.dp))
-            Divider()
+            HorizontalDivider()
             Spacer(Modifier.height(12.dp))
             Text("Session", style = MaterialTheme.typography.titleMedium)
 
