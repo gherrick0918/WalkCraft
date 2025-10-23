@@ -9,14 +9,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- Required when declaring mediaPlayback service type on SDK 34+ -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
-    <uses-permission android:name="android.permission.health.READ_STEPS" />
-    <uses-permission android:name="android.permission.health.WRITE_STEPS" />
-    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
-    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY" />
-
-    <queries>
-        <package android:name="com.google.android.apps.healthdata" />
-    </queries>
 
     <application
         android:allowBackup="true"
@@ -27,43 +19,6 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.WalkCraft">
-        <activity
-            android:name=".health.PermissionsRationaleActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
-            </intent-filter>
-        </activity>
-
-        <activity-alias
-            android:name="ViewPermissionUsageActivity"
-            android:exported="true"
-            android:permission="android.permission.START_VIEW_PERMISSION_USAGE"
-            android:targetActivity=".health.PermissionsRationaleActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
-                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
-            </intent-filter>
-        </activity-alias>
-
-        <activity
-            android:name=".health.OnboardingActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="androidx.health.ACTION_SHOW_ONBOARDING" />
-            </intent-filter>
-        </activity>
-
-        <activity-alias
-            android:name="UAndAboveOnboardingActivity"
-            android:exported="true"
-            android:permission="android.permission.health.START_ONBOARDING"
-            android:targetActivity=".health.OnboardingActivity">
-            <intent-filter>
-                <action android:name="android.health.connect.action.SHOW_ONBOARDING" />
-            </intent-filter>
-        </activity-alias>
-
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
