@@ -303,15 +303,15 @@ fun HealthConnectPermissionCard(appContext: android.content.Context) {
                 }) { Text("Last 7 days") }
 
                 if (last7.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
-                    Text("Last 7 days:\n")
-                    last7.forEachIndexed { index, (date, steps) ->
-                        val text = if (index < last7.lastIndex) {
-                            "${date.toString()}: $steps\n"
-                        } else {
-                            "${date.toString()}: $steps"
-                        }
-                        Text(text)
+                    // Use a Column to arrange Text vertically
+                    Column(modifier = Modifier.padding(start = 8.dp)) {
+                        Text("Last 7 days:")
+                        // Now the \n in a single Text composable will work correctly
+                        Text(
+                            last7.joinToString(separator = "\n") { (date, steps) ->
+                                "$date: $steps"
+                            }
+                        )
                     }
                 }
             }
