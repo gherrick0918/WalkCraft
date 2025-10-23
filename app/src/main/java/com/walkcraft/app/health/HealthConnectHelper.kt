@@ -19,7 +19,6 @@ object HealthConnectHelper {
     // Read-only for MVP
     val REQUIRED_PERMISSIONS = setOf(
         HealthPermission.getReadPermission(StepsRecord::class),
-        HealthPermission.getReadPermission(HeartRateRecord::class)
     )
 
     /** Returns SDK status and, if needed, launches Play to install/enable provider. */

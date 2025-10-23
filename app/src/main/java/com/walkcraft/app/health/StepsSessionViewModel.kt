@@ -10,8 +10,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
+import java.time.Instant
+import androidx.health.connect.client.request.AggregateRequest
+import androidx.health.connect.client.time.TimeRangeFilter
+import androidx.health.connect.client.records.StepsRecord
 
 class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
+
+    private var startInstant: Instant = Instant.EPOCH
 
     private val client = HealthConnectClient.getOrCreate(app)
 
@@ -57,6 +63,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
             if (!HealthConnectHelper.hasAllPermissions(client)) return@launch
             val baseline = HealthConnectHelper.readTodaySteps(client)
             startWallTimeMs = System.currentTimeMillis()
+            startInstant = Instant.now()
 
             _session.value = StepSessionState(
                 active = true,
@@ -86,11 +93,12 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
                 }
 
                 if (HealthConnectHelper.hasAllPermissions(client)) {
-                    val current = HealthConnectHelper.readTodaySteps(client)
-                    _session.value = _session.value.copy(latestSteps = current, elapsedMs = elapsedMs)
-                    _todaySteps.value = current
-                } else {
-                    _session.value = _session.value.copy(elapsedMs = elapsedMs)
+                    val delta = stepsSinceStart() // <- aggregate since startInstant
+                    val latest = _session.value.baselineSteps + delta
+                    _session.value = _session.value.copy(latestSteps = latest)
+
+                    // keep the “Today’s steps” label up to date (optional but nice)
+                    _todaySteps.value = HealthConnectHelper.readTodaySteps(client)
                 }
 
                 delay(pollIntervalMs)
@@ -102,10 +110,11 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             if (_session.value.active) {
                 val elapsedMs = System.currentTimeMillis() - startWallTimeMs
-                if (HealthConnectHelper.hasAllPermissions(client)) {
-                    val current = HealthConnectHelper.readTodaySteps(client)
-                    _session.value = _session.value.copy(latestSteps = current, elapsedMs = elapsedMs)
-                    _todaySteps.value = current
+                if (_session.value.active && HealthConnectHelper.hasAllPermissions(client)) {
+                    val delta = stepsSinceStart()
+                    val latest = _session.value.baselineSteps + delta
+                    _session.value = _session.value.copy(latestSteps = latest)
+                    _todaySteps.value = HealthConnectHelper.readTodaySteps(client)
                     if (pollJob?.isActive != true) startPolling()
                 } else {
                     _session.value = _session.value.copy(elapsedMs = elapsedMs)
@@ -114,6 +123,17 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
                 _todaySteps.value = HealthConnectHelper.readTodaySteps(client)
             }
         }
+    }
+
+    private suspend fun stepsSinceStart(): Long {
+        if (startInstant == Instant.EPOCH) return 0L
+        val result = client.aggregate(
+            AggregateRequest(
+                metrics = setOf(StepsRecord.COUNT_TOTAL),
+                timeRangeFilter = TimeRangeFilter.between(startInstant, Instant.now())
+            )
+        )
+        return result[StepsRecord.COUNT_TOTAL] ?: 0L
     }
 }
 
