@@ -1,10 +1,10 @@
 package com.walkcraft.app.health
 
 import android.app.Application
-import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.viewModelScope
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -17,28 +17,31 @@ data class HealthConnectUiState(
 )
 
 class HealthConnectViewModel(app: Application) : AndroidViewModel(app) {
+
+    private val manager = HealthConnectManager(app)
+
     private val _ui = MutableStateFlow(HealthConnectUiState())
     val ui: StateFlow<HealthConnectUiState> = _ui
 
     fun refreshAvailability() {
-        val ctx = getApplication<Application>()
-        val status = HealthConnectManager.sdkStatus(ctx)
-        _ui.value = _ui.value.copy(sdkStatus = status)
+        _ui.value = _ui.value.copy(sdkStatus = manager.sdkStatus())
     }
 
     fun checkPermissions() {
         viewModelScope.launch {
-            val ctx = getApplication<Application>()
-            val status = HealthConnectManager.sdkStatus(ctx)
-            if (status == HealthConnectClient.SDK_UNAVAILABLE) {
-                _ui.value = _ui.value.copy(sdkStatus = status, hasAllPermissions = false)
+            val status = manager.sdkStatus()
+            if (status != HealthConnectClient.SDK_AVAILABLE) {
+                _ui.value = _ui.value.copy(
+                    sdkStatus = status,
+                    hasAllPermissions = false,
+                    checking = false
+                )
                 return@launch
             }
             _ui.value = _ui.value.copy(checking = true, sdkStatus = status)
-            val client = HealthConnectManager.client(ctx)
-            val granted = client.permissionController.getGrantedPermissions()
+            val hasAllPermissions = manager.hasAllPermissions()
             _ui.value = _ui.value.copy(
-                hasAllPermissions = granted.containsAll(HealthConnectManager.PERMISSIONS),
+                hasAllPermissions = hasAllPermissions,
                 checking = false
             )
         }
@@ -47,7 +50,10 @@ class HealthConnectViewModel(app: Application) : AndroidViewModel(app) {
     fun onPermissionsResult(granted: Set<HealthPermission>) {
         _ui.value = _ui.value.copy(
             lastGranted = granted,
-            hasAllPermissions = granted.containsAll(HealthConnectManager.PERMISSIONS)
+            hasAllPermissions = granted.containsAll(manager.requiredPermissions)
         )
     }
+
+    val requiredPermissions: Set<HealthPermission>
+        get() = manager.requiredPermissions
 }
