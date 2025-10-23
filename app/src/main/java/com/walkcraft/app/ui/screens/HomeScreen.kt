@@ -44,6 +44,7 @@ import com.walkcraft.app.domain.plan.Plans
 import com.walkcraft.app.health.HealthConnectHelper
 import com.walkcraft.app.service.WorkoutService
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.LaunchedEffect
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -216,6 +217,14 @@ fun HealthConnectPermissionCard(appContext: android.content.Context) {
     val hcClient = remember { HealthConnectHelper.client(appContext) }
 
     var stepsToday by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(Unit) {
+        // If the user already granted permission earlier, fetch steps immediately.
+        val has = HealthConnectHelper.hasAllPermissions(hcClient)
+        if (has) {
+            stepsToday = HealthConnectHelper.readTodaySteps(hcClient)
+        }
+    }
+
     var msg by remember { mutableStateOf<String?>(null) }
 
     val REQUIRED = remember {
