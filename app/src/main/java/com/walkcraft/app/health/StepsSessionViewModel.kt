@@ -24,6 +24,8 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
 
     private val client = HealthConnectClient.getOrCreate(app)
 
+    private val appContext = getApplication<Application>()
+
     private val _session = MutableStateFlow(StepSessionState())
     val session: StateFlow<StepSessionState> = _session
 
@@ -40,9 +42,27 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
     private val pollIntervalMs = 5_000L
     private val autoStopMinutes = 120L
 
+    init {
+        viewModelScope.launch {
+            val stored = readStoredSession(appContext)
+            if (stored.active && stored.startMs > 0L) {
+                startWallTimeMs = stored.startMs
+                startInstant = Instant.ofEpochMilli(stored.startMs)
+                _session.value = StepSessionState(
+                    active = true,
+                    startEpochMs = stored.startMs,
+                    baselineSteps = stored.baselineSteps,
+                    latestSteps = stored.baselineSteps
+                ).ticked()
+                _todaySteps.value = stored.baselineSteps
+                onResume()
+            }
+        }
+    }
+
     fun reset() {
-        stop()
-        _session.value = StepSessionState()
+        stop(save = false)
+        _session.value = StepSessionState().ticked()
     }
 
     fun stop(save: Boolean = true) {
@@ -50,6 +70,8 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
         pollJob = null
 
         _session.value = _session.value.copy(active = false).ticked()
+
+        viewModelScope.launch { clearStoredSession(appContext) }
 
         if (save) {
             viewModelScope.launch {
@@ -75,7 +97,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
             if (!HealthConnectHelper.hasAllPermissions(client)) return@launch
             val baseline = HealthConnectHelper.readTodaySteps(client)
             startWallTimeMs = System.currentTimeMillis()
-            startInstant = Instant.now()
+            startInstant = Instant.ofEpochMilli(startWallTimeMs)
             _saveResult.value = null
 
             _session.value = StepSessionState(
@@ -85,6 +107,11 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
                 latestSteps = baseline,
             ).ticked()
             _todaySteps.value = baseline
+
+            writeStoredSession(
+                appContext,
+                StoredSession(true, startWallTimeMs, baseline)
+            )
 
             startPolling()
         }
