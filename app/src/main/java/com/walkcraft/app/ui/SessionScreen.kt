@@ -26,12 +26,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.ExerciseSessionRecord
+import com.walkcraft.app.health.HealthConnectHelper
 import com.walkcraft.app.health.StepsSessionViewModel
 import kotlinx.coroutines.launch
 
@@ -42,9 +44,12 @@ fun SessionScreen() {
     val stepsToday by vm.todaySteps.collectAsStateWithLifecycle()
     val saveResult = vm.saveResult.collectAsStateWithLifecycle().value
 
+    val context = LocalContext.current
+
     val WRITE_EXERCISE = remember {
         setOf(HealthPermission.getWritePermission(ExerciseSessionRecord::class))
     }
+    val REQUIRED_PERMISSIONS = remember { HealthConnectHelper.REQUIRED_PERMISSIONS }
     val writePermLauncher = rememberLauncherForActivityResult(
         PermissionController.createRequestPermissionResultContract()
     ) { granted: Set<String> ->
@@ -53,8 +58,19 @@ fun SessionScreen() {
             vm.stop(save = true)
         }
     }
-
     var saveThisSession by remember { mutableStateOf(true) }
+    var permissionMessage by remember { mutableStateOf<String?>(null) }
+
+    val readPermLauncher = rememberLauncherForActivityResult(
+        PermissionController.createRequestPermissionResultContract()
+    ) { granted: Set<String> ->
+        if (REQUIRED_PERMISSIONS.all { it in granted }) {
+            permissionMessage = null
+            vm.start()
+        } else {
+            permissionMessage = "Grant ‘Activity’ permission to start a session."
+        }
+    }
 
     val scope = rememberCoroutineScope()
 
@@ -77,7 +93,23 @@ fun SessionScreen() {
         Spacer(Modifier.height(8.dp))
 
         Row {
-            Button(onClick = { vm.start() }, enabled = !session.active) { Text("Start") }
+            Button(
+                onClick = {
+                    scope.launch {
+                        permissionMessage = null
+                        if (!HealthConnectHelper.ensureAvailableOrLaunchInstall(context)) {
+                            permissionMessage = "Install Health Connect to start a session."
+                            return@launch
+                        }
+                        if (vm.needsStepsPermission()) {
+                            readPermLauncher.launch(REQUIRED_PERMISSIONS)
+                        } else {
+                            vm.start()
+                        }
+                    }
+                },
+                enabled = !session.active
+            ) { Text("Start") }
             Spacer(Modifier.width(12.dp))
             Button(
                 onClick = {
@@ -102,6 +134,11 @@ fun SessionScreen() {
                 onClick = { vm.reset() },
                 enabled = !session.active && (session.baselineSteps != 0L || session.latestSteps != 0L)
             ) { Text("Reset") }
+        }
+
+        permissionMessage?.let { msg ->
+            Spacer(Modifier.height(8.dp))
+            Text(msg, color = MaterialTheme.colorScheme.error)
         }
 
         saveResult?.let { res ->

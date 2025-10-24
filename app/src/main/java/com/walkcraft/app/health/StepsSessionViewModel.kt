@@ -159,6 +159,11 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
         return !HealthConnectHelper.hasWriteExercisePermission(client)
     }
 
+    /** Used by UI to decide whether to prompt for the core steps permission before starting. */
+    suspend fun needsStepsPermission(): Boolean {
+        return !HealthConnectHelper.hasStepsPermission(client)
+    }
+
     // --- Internals ---
 
     private fun startPolling() {
