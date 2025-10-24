@@ -68,7 +68,7 @@ class SessionFgService : Service(), SensorEventListener {
         stepCounter = sm.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
 
         val ch = NotificationChannel(
-            CHANNEL_ID, "WalkCraft Session", NotificationManager.IMPORTANCE_LOW
+            CHANNEL_ID, "WalkCraft Session", NotificationManager.IMPORTANCE_DEFAULT
         )
         nm.createNotificationChannel(ch)
     }
@@ -118,6 +118,11 @@ class SessionFgService : Service(), SensorEventListener {
             .setContentText("Session steps: $steps")
             .setOngoing(true)
             .setOnlyAlertOnce(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setCategory(NotificationCompat.CATEGORY_WORKOUT)
+            .setShowWhen(true)
+            .setWhen(startMs)
+            .setUsesChronometer(true)
             .build()
     }
 
