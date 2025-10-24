@@ -1,13 +1,13 @@
 package com.walkcraft.app.health
 
 import android.app.Application
-import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.viewModelScope
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.time.TimeRangeFilter
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
 import java.time.Instant
 import java.time.ZoneId
 import java.util.concurrent.TimeUnit
@@ -16,6 +16,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import com.walkcraft.app.session.SessionFgService
 
 /**
  * ViewModel that manages a walking "session" using Health Connect.
@@ -92,6 +93,9 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
                 StoredSession(active = true, startMs = startWallTimeMs, baselineSteps = baseline)
             )
 
+            // Kick off live lock-screen/notification updates
+            SessionFgService.start(appContext, startWallTimeMs, baseline)
+
             startPolling()
         }
     }
@@ -101,6 +105,9 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
         pollJob = null
         _session.value = _session.value.copy(active = false, lastTickMs = System.currentTimeMillis())
         viewModelScope.launch { clearStoredSession(appContext) }
+
+        // Stop the foreground service
+        SessionFgService.stop(appContext)
 
         if (save) {
             viewModelScope.launch {

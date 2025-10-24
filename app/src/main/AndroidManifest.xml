@@ -4,6 +4,8 @@
 
     <!-- Android 13+ runtime permission for posting notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
@@ -46,6 +48,11 @@
             android:exported="false"
             android:stopWithTask="true"
             android:foregroundServiceType="mediaPlayback|dataSync" />
+
+        <service
+            android:name=".session.SessionFgService"
+            android:exported="false"
+            android:foregroundServiceType="health" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

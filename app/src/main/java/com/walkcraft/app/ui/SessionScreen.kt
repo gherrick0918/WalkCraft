@@ -1,6 +1,10 @@
 package com.walkcraft.app.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -33,6 +37,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.ExerciseSessionRecord
+import androidx.core.content.ContextCompat
 import com.walkcraft.app.health.HealthConnectHelper
 import com.walkcraft.app.health.StepsSessionViewModel
 import kotlinx.coroutines.launch
@@ -60,6 +65,14 @@ fun SessionScreen() {
     }
     var saveThisSession by remember { mutableStateOf(true) }
     var permissionMessage by remember { mutableStateOf<String?>(null) }
+
+    val notifPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* no-op; we just attempt to show the notif either way */ }
+
+    val arPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* if denied, service still runs but won't get sensor steps */ }
 
     val readPermLauncher = rememberLauncherForActivityResult(
         PermissionController.createRequestPermissionResultContract()
@@ -101,6 +114,27 @@ fun SessionScreen() {
                             permissionMessage = "Install Health Connect to start a session."
                             return@launch
                         }
+
+                        // Request POST_NOTIFICATIONS on Android 13+ (so foreground service notif can show)
+                        if (Build.VERSION.SDK_INT >= 33) {
+                            val granted =
+                                ContextCompat.checkSelfPermission(
+                                    context,
+                                    Manifest.permission.POST_NOTIFICATIONS
+                                ) == PackageManager.PERMISSION_GRANTED
+                            if (!granted) notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+
+                        // Request ACTIVITY_RECOGNITION on Android 10+ (for step detector/counter)
+                        if (Build.VERSION.SDK_INT >= 29) {
+                            val grantedAR =
+                                ContextCompat.checkSelfPermission(
+                                    context,
+                                    Manifest.permission.ACTIVITY_RECOGNITION
+                                ) == PackageManager.PERMISSION_GRANTED
+                            if (!grantedAR) arPermLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+                        }
+
                         if (vm.needsStepsPermission()) {
                             readPermLauncher.launch(REQUIRED_PERMISSIONS)
                         } else {
