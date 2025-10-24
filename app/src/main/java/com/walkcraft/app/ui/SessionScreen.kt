@@ -11,6 +11,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DividerDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -62,7 +64,7 @@ fun SessionScreen() {
         }
 
         Spacer(Modifier.height(16.dp))
-        Divider()
+        HorizontalDivider(Modifier, DividerDefaults.Thickness, DividerDefaults.color)
         Spacer(Modifier.height(12.dp))
         Button(onClick = { vm.refreshToday() }) { Text("Refresh Today") }
     }

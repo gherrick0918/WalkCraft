@@ -1,6 +1,7 @@
 package com.walkcraft.app.ui
 
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -17,6 +18,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.walkcraft.app.nav.NavRoute
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WalkCraftApp() {
     val nav = rememberNavController()
