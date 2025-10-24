@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,7 +21,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
@@ -41,7 +39,6 @@ fun HealthConnectPermissionCard(appContext: Context) {
     val hcClient = remember { HealthConnectHelper.client(appContext) }
 
     val vm: StepsSessionViewModel = viewModel()
-    val session by vm.session.collectAsStateWithLifecycle()
     val stepsToday by vm.todaySteps.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
@@ -51,7 +48,7 @@ fun HealthConnectPermissionCard(appContext: Context) {
         }
     }
 
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -132,38 +129,7 @@ fun HealthConnectPermissionCard(appContext: Context) {
             }
 
             Spacer(Modifier.height(16.dp))
-            HorizontalDivider()
-            Spacer(Modifier.height(12.dp))
-            Text("Session", style = MaterialTheme.typography.titleMedium)
-
-            Row {
-                Button(
-                    onClick = {
-                        scope.launch {
-                            if (HealthConnectHelper.hasAllPermissions(hcClient)) {
-                                vm.start()
-                            } else msg = "Grant permissions first"
-                        }
-                    },
-                    enabled = !session.active
-                ) { Text("Start") }
-
-                Spacer(Modifier.width(12.dp))
-
-                Button(onClick = { vm.stop() }, enabled = session.active) { Text("Stop") }
-
-                Spacer(Modifier.width(12.dp))
-
-                Button(
-                    onClick = { vm.reset() },
-                    enabled = !session.active && (session.baselineSteps != 0L || session.latestSteps != 0L)
-                ) { Text("Reset") }
-            }
-
-            Spacer(Modifier.height(8.dp))
             stepsToday?.let { Text("Today’s steps: $it") }
-            Spacer(Modifier.height(16.dp))
-            Text("Session steps: ${session.sessionSteps}")
             msg?.let { Text(it) }
         }
     }
