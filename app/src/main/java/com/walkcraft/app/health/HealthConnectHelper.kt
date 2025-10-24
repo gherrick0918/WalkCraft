@@ -7,6 +7,7 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
@@ -19,6 +20,15 @@ object HealthConnectHelper {
     val REQUIRED_PERMISSIONS = setOf(
         HealthPermission.getReadPermission(StepsRecord::class),
     )
+
+    // Write permission for saving sessions
+    val PERM_WRITE_EXERCISE: String =
+        HealthPermission.getWritePermission(ExerciseSessionRecord::class)
+
+    suspend fun hasWriteExercisePermission(client: HealthConnectClient): Boolean {
+        val granted = client.permissionController.getGrantedPermissions()
+        return granted.contains(PERM_WRITE_EXERCISE)
+    }
 
     /** Returns SDK status and, if needed, launches Play to install/enable provider. */
     fun ensureAvailableOrLaunchInstall(context: Context): Boolean {
