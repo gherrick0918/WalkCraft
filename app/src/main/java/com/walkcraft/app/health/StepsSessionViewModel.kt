@@ -45,6 +45,8 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
     private var pollJob: Job? = null
     private var startWallTimeMs: Long = 0L                     // for elapsed clock
     private var startInstant: Instant = Instant.EPOCH          // for aggregates
+    private var uiFastBeat = false
+    private var lastHcReadMs = 0L
 
     private val pollIntervalMs = 15_000L                       // battery-friendly / near write cadence
     private val autoStopMinutes = 120L                         // guardrail
@@ -136,6 +138,8 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
     /** Called by the screen when it resumes (and also from init after restore). */
     fun onResume() {
         viewModelScope.launch {
+            uiFastBeat = true
+            lastHcReadMs = 0L
             if (_session.value.active) {
                 if (HealthConnectHelper.hasStepsPermission(client)) {
                     val deltaAgg = stepsSinceStart()
@@ -143,22 +147,20 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
                     val deltaToday = (today - _session.value.baselineSteps).coerceAtLeast(0)
                     val delta = maxOf(deltaAgg, deltaToday)
                     val latest = _session.value.baselineSteps + delta
-
-                    _session.value = _session.value.copy(
-                        latestSteps = latest,
-                        lastTickMs = System.currentTimeMillis()
-                    )
+                    _session.value = _session.value.copy(latestSteps = latest, lastTickMs = System.currentTimeMillis())
                     _todaySteps.value = today
                 } else {
-                    // Even without permission, tick so elapsed updates visually.
                     _session.value = _session.value.copy(lastTickMs = System.currentTimeMillis())
                 }
-                // Ensure polling is running if we returned from background.
                 if (pollJob?.isActive != true) startPolling()
             } else if (HealthConnectHelper.hasStepsPermission(client)) {
                 _todaySteps.value = HealthConnectHelper.readTodaySteps(client)
             }
         }
+    }
+
+    fun onPause() {
+        uiFastBeat = false
     }
 
     /** Used by UI to decide whether to prompt for WRITE_EXERCISE before saving. */
@@ -178,37 +180,34 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
 
         pollJob = viewModelScope.launch {
             while (true) {
-                val elapsedMin = TimeUnit.MILLISECONDS.toMinutes(
-                    System.currentTimeMillis() - startWallTimeMs
-                )
+                val now = System.currentTimeMillis()
+                val elapsedMin = TimeUnit.MILLISECONDS.toMinutes(now - startWallTimeMs)
 
-                // Auto-stop guard.
                 if (!_session.value.active || elapsedMin >= autoStopMinutes) {
-                    _session.value = _session.value.copy(active = false, lastTickMs = System.currentTimeMillis())
+                    _session.value = _session.value.copy(active = false, lastTickMs = now)
                     pollJob?.cancel()
                     break
                 }
 
                 if (HealthConnectHelper.hasStepsPermission(client)) {
-                    // 1) Aggregated delta since start
-                    val deltaAgg = stepsSinceStart()
-                    // 2) Fallback delta using today's total
-                    val today = HealthConnectHelper.readTodaySteps(client)
-                    val deltaToday = (today - _session.value.baselineSteps).coerceAtLeast(0)
-                    // 3) Choose the best signal
-                    val delta = maxOf(deltaAgg, deltaToday)
-                    val latest = _session.value.baselineSteps + delta
-
-                    _session.value = _session.value.copy(
-                        latestSteps = latest,
-                        lastTickMs = System.currentTimeMillis()
-                    )
-                    _todaySteps.value = today
+                    val doHeavy = now - lastHcReadMs >= pollIntervalMs
+                    if (doHeavy) {
+                        val deltaAgg = stepsSinceStart()
+                        val today = HealthConnectHelper.readTodaySteps(client)
+                        val deltaToday = (today - _session.value.baselineSteps).coerceAtLeast(0)
+                        val delta = maxOf(deltaAgg, deltaToday)
+                        val latest = _session.value.baselineSteps + delta
+                        _session.value = _session.value.copy(latestSteps = latest, lastTickMs = now)
+                        _todaySteps.value = today
+                        lastHcReadMs = now
+                    } else {
+                        _session.value = _session.value.copy(lastTickMs = now)
+                    }
                 } else {
-                    _session.value = _session.value.copy(lastTickMs = System.currentTimeMillis())
+                    _session.value = _session.value.copy(lastTickMs = now)
                 }
 
-                delay(pollIntervalMs)
+                delay(if (uiFastBeat) 1000L else pollIntervalMs)
             }
         }
     }
