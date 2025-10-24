@@ -1,15 +1,24 @@
 package com.walkcraft.app.ui
 
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.DirectionsWalk
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.compose.NavHost
@@ -17,6 +26,14 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.walkcraft.app.nav.NavRoute
+
+private fun iconFor(route: String): ImageVector = when (route) {
+    "home" -> Icons.Outlined.Home
+    "session" -> Icons.Outlined.DirectionsWalk
+    "history" -> Icons.Outlined.History
+    "settings" -> Icons.Outlined.Settings
+    else -> Icons.Outlined.Home
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,8 +62,15 @@ fun WalkCraftApp() {
                                 }
                             }
                         },
-                        icon = { Text(route.label.take(1)) },
-                        label = { Text(route.label) }
+                        icon = { Icon(iconFor(route.route), contentDescription = route.label) },
+                        label = { Text(route.label) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            selectedTextColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            indicatorColor = MaterialTheme.colorScheme.primaryContainer
+                        )
                     )
                 }
             }
@@ -66,7 +90,6 @@ fun WalkCraftApp() {
         }
     }
 }
-
 @Composable
 private fun currentLabel(dest: NavDestination?): String? {
     val match = NavRoute.bottom.firstOrNull { route ->
