@@ -1,19 +1,22 @@
 package com.walkcraft.app.health
 
 import android.app.Application
+import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.records.ExerciseSessionRecord
+import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.request.AggregateRequest
+import androidx.health.connect.client.time.TimeRangeFilter
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.health.connect.client.HealthConnectClient
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import java.util.concurrent.TimeUnit
-import java.time.Instant
-import androidx.health.connect.client.request.AggregateRequest
-import androidx.health.connect.client.time.TimeRangeFilter
-import androidx.health.connect.client.records.StepsRecord
 
 class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -27,6 +30,11 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
     private val _todaySteps = MutableStateFlow<Long?>(null)
     val todaySteps: StateFlow<Long?> = _todaySteps
 
+    data class SaveResult(val success: Boolean, val message: String)
+
+    private val _saveResult = MutableStateFlow<SaveResult?>(null)
+    val saveResult: StateFlow<SaveResult?> = _saveResult
+
     private var pollJob: Job? = null
     private var startWallTimeMs: Long = 0L
     private val pollIntervalMs = 5_000L
@@ -37,17 +45,21 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
         _session.value = StepSessionState()
     }
 
-    fun stop() {
+    fun stop(save: Boolean = true) {
         pollJob?.cancel()
         pollJob = null
 
-        val elapsed = if (_session.value.active) {
-            System.currentTimeMillis() - startWallTimeMs
-        } else {
-            _session.value.elapsedMs
-        }
-
         _session.value = _session.value.copy(active = false).ticked()
+
+        if (save) {
+            viewModelScope.launch {
+                try {
+                    _saveResult.value = saveCurrentSessionIfAllowed()
+                } catch (t: Throwable) {
+                    _saveResult.value = SaveResult(false, "Save failed: ${t.message}")
+                }
+            }
+        }
     }
 
     fun refreshToday() {
@@ -64,6 +76,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
             val baseline = HealthConnectHelper.readTodaySteps(client)
             startWallTimeMs = System.currentTimeMillis()
             startInstant = Instant.now()
+            _saveResult.value = null
 
             _session.value = StepSessionState(
                 active = true,
@@ -133,6 +146,29 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
             )
         )
         return result[StepsRecord.COUNT_TOTAL] ?: 0L
+    }
+
+    private suspend fun saveCurrentSessionIfAllowed(): SaveResult {
+        if (startInstant == Instant.EPOCH) {
+            return SaveResult(false, "No session to save.")
+        }
+        val canWrite = HealthConnectHelper.hasWriteExercisePermission(client)
+        if (!canWrite) return SaveResult(false, "Missing permission to save session.")
+
+        val end = Instant.now()
+        val zoneRules = ZoneId.systemDefault().rules
+        val startOffset: ZoneOffset = zoneRules.getOffset(startInstant)
+        val endOffset: ZoneOffset = zoneRules.getOffset(end)
+        val record = ExerciseSessionRecord(
+            startTime = startInstant,
+            endTime = end,
+            startZoneOffset = startOffset,
+            endZoneOffset = endOffset,
+            exerciseType = ExerciseSessionRecord.EXERCISE_TYPE_WALKING,
+            title = "WalkCraft Session"
+        )
+        client.insertRecords(listOf(record))
+        return SaveResult(true, "Session saved to Health Connect.")
     }
 
     fun StepSessionState.ticked(now: Long = System.currentTimeMillis()) =

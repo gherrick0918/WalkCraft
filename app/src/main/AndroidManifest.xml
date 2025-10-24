@@ -10,6 +10,7 @@
     <!-- Read-only for MVP; add WRITE_* later if/when needed -->
     <uses-permission android:name="android.permission.health.READ_STEPS" />
     <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.WRITE_EXERCISE" />
     <!-- Required when declaring mediaPlayback service type on SDK 34+ -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
