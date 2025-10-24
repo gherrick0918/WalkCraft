@@ -200,5 +200,9 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
 
     fun StepSessionState.ticked(now: Long = System.currentTimeMillis()) =
         copy(lastTickMs = now)
+
+    suspend fun needsWriteExercisePermission(): Boolean {
+        return !HealthConnectHelper.hasWriteExercisePermission(client)
+    }
 }
 

@@ -22,6 +22,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +33,7 @@ import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import com.walkcraft.app.health.StepsSessionViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun SessionScreen() {
@@ -45,9 +47,16 @@ fun SessionScreen() {
     }
     val writePermLauncher = rememberLauncherForActivityResult(
         PermissionController.createRequestPermissionResultContract()
-    ) { /* no-op; vm.stop() will attempt save next time */ }
+    ) { granted: Set<String> ->
+        // If granted, try saving again immediately
+        if (WRITE_EXERCISE.all { it in granted }) {
+            vm.stop(save = true)
+        }
+    }
 
     var saveThisSession by remember { mutableStateOf(true) }
+
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) { vm.onResume() }
 
@@ -70,9 +79,24 @@ fun SessionScreen() {
         Row {
             Button(onClick = { vm.start() }, enabled = !session.active) { Text("Start") }
             Spacer(Modifier.width(12.dp))
-            Button(onClick = { vm.stop(save = saveThisSession) }, enabled = session.active) {
-                Text("Stop")
-            }
+            Button(
+                onClick = {
+                    // If we want to save, make sure we prompt first
+                    if (saveThisSession) {
+                        // use a coroutine scope already in this composable
+                        scope.launch {
+                            if (vm.needsWriteExercisePermission()) {
+                                writePermLauncher.launch(WRITE_EXERCISE)
+                            } else {
+                                vm.stop(save = true)
+                            }
+                        }
+                    } else {
+                        vm.stop(save = false)
+                    }
+                },
+                enabled = session.active
+            ) { Text("Stop") }
             Spacer(Modifier.width(12.dp))
             Button(
                 onClick = { vm.reset() },
