@@ -19,9 +19,10 @@ import kotlinx.coroutines.launch
 
 /**
  * ViewModel that manages a walking "session" using Health Connect.
- * - Persists essential session info so a process death / app close can resume on next launch.
+ * - Steps-only runtime requirement.
+ * - Persists essential session info (DataStore) so process death / app close can resume on next launch.
  * - Polls gently while the Session screen is visible; catches up on resume.
- * - Computes session steps using max(aggregate since start, today's total - baseline).
+ * - Computes session steps as max(aggregate since start, today's total - baseline).
  */
 class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -44,7 +45,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
     private var startWallTimeMs: Long = 0L                     // for elapsed clock
     private var startInstant: Instant = Instant.EPOCH          // for aggregates
 
-    private val pollIntervalMs = 15_000L                       // 15s is battery-friendly & near write cadence
+    private val pollIntervalMs = 15_000L                       // battery-friendly / near write cadence
     private val autoStopMinutes = 120L                         // guardrail
 
     private val appContext = getApplication<Application>()
@@ -72,7 +73,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
 
     fun start() {
         viewModelScope.launch {
-            if (!HealthConnectHelper.hasAllPermissions(client)) return@launch
+            if (!HealthConnectHelper.hasStepsPermission(client)) return@launch
             val baseline = HealthConnectHelper.readTodaySteps(client)
             startWallTimeMs = System.currentTimeMillis()
             startInstant = Instant.ofEpochMilli(startWallTimeMs)
@@ -119,7 +120,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refreshToday() {
         viewModelScope.launch {
-            if (HealthConnectHelper.hasAllPermissions(client)) {
+            if (HealthConnectHelper.hasStepsPermission(client)) {
                 _todaySteps.value = HealthConnectHelper.readTodaySteps(client)
             }
         }
@@ -129,7 +130,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
     fun onResume() {
         viewModelScope.launch {
             if (_session.value.active) {
-                if (HealthConnectHelper.hasAllPermissions(client)) {
+                if (HealthConnectHelper.hasStepsPermission(client)) {
                     val deltaAgg = stepsSinceStart()
                     val today = HealthConnectHelper.readTodaySteps(client)
                     val deltaToday = (today - _session.value.baselineSteps).coerceAtLeast(0)
@@ -147,7 +148,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 // Ensure polling is running if we returned from background.
                 if (pollJob?.isActive != true) startPolling()
-            } else if (HealthConnectHelper.hasAllPermissions(client)) {
+            } else if (HealthConnectHelper.hasStepsPermission(client)) {
                 _todaySteps.value = HealthConnectHelper.readTodaySteps(client)
             }
         }
@@ -161,7 +162,6 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
     // --- Internals ---
 
     private fun startPolling() {
-        // Guard against duplicate jobs.
         if (pollJob?.isActive == true) return
 
         pollJob = viewModelScope.launch {
@@ -177,7 +177,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
                     break
                 }
 
-                if (HealthConnectHelper.hasAllPermissions(client)) {
+                if (HealthConnectHelper.hasStepsPermission(client)) {
                     // 1) Aggregated delta since start
                     val deltaAgg = stepsSinceStart()
                     // 2) Fallback delta using today's total
@@ -193,7 +193,6 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
                     )
                     _todaySteps.value = today
                 } else {
-                    // Keep UI clock alive even if permission temporarily revoked.
                     _session.value = _session.value.copy(lastTickMs = System.currentTimeMillis())
                 }
 

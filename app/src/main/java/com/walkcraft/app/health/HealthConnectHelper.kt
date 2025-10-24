@@ -16,58 +16,69 @@ import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
 object HealthConnectHelper {
-    // Read-only for MVP
-    val REQUIRED_PERMISSIONS = setOf(
-        HealthPermission.getReadPermission(StepsRecord::class),
-    )
 
-    // Write permission for saving sessions
+    // ---- Permissions (steps-only required for core features right now) ----
+    val PERM_READ_STEPS: String =
+        HealthPermission.getReadPermission(StepsRecord::class)
+
     val PERM_WRITE_EXERCISE: String =
         HealthPermission.getWritePermission(ExerciseSessionRecord::class)
 
-    suspend fun hasWriteExercisePermission(client: HealthConnectClient): Boolean {
-        val granted = client.permissionController.getGrantedPermissions()
-        return granted.contains(PERM_WRITE_EXERCISE)
-    }
+    /** App-wide "required" set = Steps only (HR may remain in manifest but isn't required at runtime). */
+    val REQUIRED_PERMISSIONS: Set<String> = setOf(PERM_READ_STEPS)
 
-    /** Returns SDK status and, if needed, launches Play to install/enable provider. */
+    // ---- Client / availability ----
+    fun client(context: Context): HealthConnectClient =
+        HealthConnectClient.getOrCreate(context)
+
+    /**
+     * Returns true if provider is ready. If not, opens Play to install/enable, and returns false.
+     */
     fun ensureAvailableOrLaunchInstall(context: Context): Boolean {
-        val providerPkg = "com.google.android.apps.healthdata"
-        // Using default provider name avoids signature drift across minor versions
-        val status = HealthConnectClient.getSdkStatus(context)
-        if (status == HealthConnectClient.SDK_UNAVAILABLE) return false
-        if (status == HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED) {
-            // Open Play with the Health Connect onboarding URL
-            val uri = "market://details?id=$providerPkg&url=healthconnect%3A%2F%2Fonboarding"
-            context.startActivity(
-                Intent(Intent.ACTION_VIEW).apply {
-                    setPackage("com.android.vending")
-                    data = Uri.parse(uri)
-                    putExtra("overlay", true)
-                    putExtra("callerId", context.packageName)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-            )
-            return false
+        when (HealthConnectClient.getSdkStatus(context)) {
+            HealthConnectClient.SDK_UNAVAILABLE -> return false
+            HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> {
+                val pkg = "com.google.android.apps.healthdata"
+                val uri = "market://details?id=$pkg&url=healthconnect%3A%2F%2Fonboarding"
+                context.startActivity(
+                    Intent(Intent.ACTION_VIEW).apply {
+                        setPackage("com.android.vending")
+                        data = Uri.parse(uri)
+                        putExtra("overlay", true)
+                        putExtra("callerId", context.packageName)
+                    }
+                )
+                return false
+            }
         }
         return true
     }
 
-    fun client(context: Context): HealthConnectClient = HealthConnectClient.getOrCreate(context)
+    // ---- Permission helpers ----
+    fun permissionContract() =
+        PermissionController.createRequestPermissionResultContract()
 
+    fun launchPermissionUi(launcher: ActivityResultLauncher<Set<String>>) {
+        launcher.launch(REQUIRED_PERMISSIONS)
+    }
+
+    suspend fun hasStepsPermission(client: HealthConnectClient): Boolean {
+        val granted = client.permissionController.getGrantedPermissions()
+        return PERM_READ_STEPS in granted
+    }
+
+    suspend fun hasWriteExercisePermission(client: HealthConnectClient): Boolean {
+        val granted = client.permissionController.getGrantedPermissions()
+        return PERM_WRITE_EXERCISE in granted
+    }
+
+    /** Kept for compatibility; this is also steps-only now. */
     suspend fun hasAllPermissions(client: HealthConnectClient): Boolean {
         val granted = client.permissionController.getGrantedPermissions()
         return granted.containsAll(REQUIRED_PERMISSIONS)
     }
 
-    fun launchPermissionUi(
-        launcher: ActivityResultLauncher<Set<String>>
-    ) {
-        launcher.launch(REQUIRED_PERMISSIONS)
-    }
-
-    fun permissionContract() = PermissionController.createRequestPermissionResultContract()
-
+    // ---- Reads (steps) ----
     suspend fun readTodaySteps(
         client: HealthConnectClient,
         zoneId: ZoneId = ZoneId.systemDefault()
@@ -103,14 +114,14 @@ object HealthConnectHelper {
         client: HealthConnectClient,
         days: Int = 7,
         zoneId: ZoneId = ZoneId.systemDefault()
-    ): List<Pair<LocalDate, Long>> {
+    ): List<Pair<LocalDate, Long>> { // Changed (LocalDate, Long) to <LocalDate, Long>
         val today = LocalDate.now(zoneId)
-        val results = mutableListOf<Pair<LocalDate, Long>>()
+        val out = mutableListOf<Pair<LocalDate, Long>>()
         for (i in (days - 1) downTo 0) {
             val d = today.minusDays(i.toLong())
             val total = readStepsForDate(client, d, zoneId)
-            results += d to total
+            out += d to total
         }
-        return results
+        return out
     }
 }
