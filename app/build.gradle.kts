@@ -12,8 +12,8 @@ android {
         applicationId = "com.walkcraft.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 24
-        versionName = "1.0.24"
+        versionCode = 25
+        versionName = "1.0.25"
 
         // Add the test instrumentation runner
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
