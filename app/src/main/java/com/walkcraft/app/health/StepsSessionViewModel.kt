@@ -132,12 +132,23 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
                 }
 
                 if (HealthConnectHelper.hasAllPermissions(client)) {
-                    val delta = stepsSinceStart() // <- aggregate since startInstant
-                    val latest = _session.value.baselineSteps + delta
-                    _session.value = _session.value.copy(latestSteps = latest).ticked()
+                    // 1) Aggregated delta since start
+                    val deltaAgg = stepsSinceStart()
 
-                    // keep the “Today’s steps” label up to date (optional but nice)
-                    _todaySteps.value = HealthConnectHelper.readTodaySteps(client)
+                    // 2) Fallback delta using today's total
+                    val today = HealthConnectHelper.readTodaySteps(client)
+                    val deltaToday = (today - _session.value.baselineSteps).coerceAtLeast(0)
+
+                    // 3) Choose the best signal
+                    val delta = maxOf(deltaAgg, deltaToday)
+                    val latest = _session.value.baselineSteps + delta
+
+                    val now = System.currentTimeMillis()
+                    _session.value = _session.value.copy(
+                        latestSteps = latest,
+                        lastTickMs = now
+                    )
+                    _todaySteps.value = today
                 }
 
                 delay(pollIntervalMs)
@@ -150,11 +161,23 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
             if (_session.value.active) {
                 val elapsedMs = System.currentTimeMillis() - startWallTimeMs
                 if (_session.value.active && HealthConnectHelper.hasAllPermissions(client)) {
-                    val delta = stepsSinceStart()
+                    // 1) Aggregated delta since start
+                    val deltaAgg = stepsSinceStart()
+
+                    // 2) Fallback delta using today's total
+                    val today = HealthConnectHelper.readTodaySteps(client)
+                    val deltaToday = (today - _session.value.baselineSteps).coerceAtLeast(0)
+
+                    // 3) Choose the best signal
+                    val delta = maxOf(deltaAgg, deltaToday)
                     val latest = _session.value.baselineSteps + delta
-                    _session.value = _session.value.copy(latestSteps = latest).ticked()
-                    _todaySteps.value = HealthConnectHelper.readTodaySteps(client)
-                    if (pollJob?.isActive != true) startPolling()
+
+                    val now = System.currentTimeMillis()
+                    _session.value = _session.value.copy(
+                        latestSteps = latest,
+                        lastTickMs = now
+                    )
+                    _todaySteps.value = today
                 } else {
                     _session.value = _session.value.copy().ticked()
                 }
