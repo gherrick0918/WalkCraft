@@ -2,6 +2,7 @@ package com.walkcraft.app.ui
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.DirectionsWalk
 import androidx.compose.material.icons.outlined.DirectionsWalk
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
@@ -29,7 +30,7 @@ import com.walkcraft.app.nav.NavRoute
 
 private fun iconFor(route: String): ImageVector = when (route) {
     "home" -> Icons.Outlined.Home
-    "session" -> Icons.Outlined.DirectionsWalk
+    "session" -> Icons.AutoMirrored.Outlined.DirectionsWalk
     "history" -> Icons.Outlined.History
     "settings" -> Icons.Outlined.Settings
     else -> Icons.Outlined.Home
