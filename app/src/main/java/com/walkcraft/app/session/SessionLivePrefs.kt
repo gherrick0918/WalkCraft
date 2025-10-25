@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 // File-scoped extension (use from both Service and ViewModel)
@@ -24,3 +25,7 @@ suspend fun clearLocalDelta(ctx: Context) {
 // observe
 fun liveDeltaFlow(ctx: Context) =
     ctx.sessionLiveDataStore.data.map { prefs -> prefs[KEY_LOCAL_DELTA] ?: 0L }
+
+suspend fun readLocalDelta(ctx: Context): Long {
+    return ctx.sessionLiveDataStore.data.first()[KEY_LOCAL_DELTA] ?: 0L
+}
