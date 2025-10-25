@@ -1,6 +1,9 @@
 package com.walkcraft.app.health
 
 import android.app.Application
+import com.walkcraft.app.session.SessionFgService
+import com.walkcraft.app.data.AppDb
+import com.walkcraft.app.data.SessionEntity
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.StepsRecord
@@ -16,7 +19,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import com.walkcraft.app.session.SessionFgService
 
 /**
  * ViewModel that manages a walking "session" using Health Connect.
@@ -111,14 +113,31 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
         // Stop the foreground service
         SessionFgService.stop(appContext)
 
-        if (save) {
-            viewModelScope.launch {
+        // snapshot values
+        val start = startWallTimeMs
+        val end = System.currentTimeMillis()
+        val steps = _session.value.sessionSteps
+
+        viewModelScope.launch {
+            var savedToHc = false
+            if (save) {
                 try {
-                    _saveResult.value = saveCurrentSessionIfAllowed()
+                    val res = saveCurrentSessionIfAllowed()
+                    _saveResult.value = res
+                    savedToHc = res.success
                 } catch (t: Throwable) {
                     _saveResult.value = SaveResult(false, "Save failed: ${t.message}")
                 }
             }
+            // Insert local history row regardless
+            AppDb.get(appContext).sessions().insert(
+                SessionEntity(
+                    startMs = start,
+                    endMs = end,
+                    steps = steps,
+                    savedToHc = savedToHc
+                )
+            )
         }
     }
 

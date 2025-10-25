@@ -8,7 +8,19 @@ pluginManagement {
             }
         }
         mavenCentral()
+        maven("https://maven.pkg.jetbrains.space/public/p/kotlin/p/ksp") {
+            content {
+                includeGroup("com.google.devtools.ksp")
+            }
+        }
         gradlePluginPortal()
+    }
+    resolutionStrategy {
+        eachPlugin {
+            if (requested.id.id == "com.google.devtools.ksp") {
+                useModule("com.google.devtools.ksp:symbol-processing-gradle-plugin:${requested.version}")
+            }
+        }
     }
 }
 dependencyResolutionManagement {
@@ -16,6 +28,11 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven("https://maven.pkg.jetbrains.space/public/p/kotlin/p/ksp") {
+            content {
+                includeGroup("com.google.devtools.ksp")
+            }
+        }
     }
 }
 
