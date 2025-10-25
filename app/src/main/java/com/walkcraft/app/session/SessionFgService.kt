@@ -22,6 +22,7 @@ import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
+import com.walkcraft.app.session.StepBus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -106,6 +107,9 @@ class SessionFgService : Service(), SensorEventListener {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startMs = intent?.getLongExtra(EXTRA_START_MS, 0L) ?: 0L
         baseline = intent?.getLongExtra(EXTRA_BASELINE, baseline) ?: baseline
+        StepBus.reset()
+        localSessionSteps = 0L
+        bootCounterAtStart = null
 
         val initial = buildNotif(elapsedMs = 0L, steps = 0L)
         if (Build.VERSION.SDK_INT >= 34) {
@@ -131,7 +135,10 @@ class SessionFgService : Service(), SensorEventListener {
                     try {
                         val today = readTodayStepsHc()
                         val delta = (today - baseline).coerceAtLeast(0)
-                        if (delta > localSessionSteps) localSessionSteps = delta
+                        if (delta > localSessionSteps) {
+                            localSessionSteps = delta
+                            StepBus.setDelta(localSessionSteps)
+                        }
                     } catch (_: Throwable) {
                     }
                     lastHcPoll = now
@@ -172,6 +179,7 @@ class SessionFgService : Service(), SensorEventListener {
         } catch (_: Throwable) {
         }
         scope.cancel()
+        StepBus.reset()
         super.onDestroy()
     }
 
@@ -183,11 +191,15 @@ class SessionFgService : Service(), SensorEventListener {
         when (ev.sensor.type) {
             Sensor.TYPE_STEP_DETECTOR -> {
                 localSessionSteps += 1
+                StepBus.setDelta(localSessionSteps)
             }
             Sensor.TYPE_STEP_COUNTER -> {
                 if (bootCounterAtStart == null) bootCounterAtStart = ev.values[0]
                 val delta = (ev.values[0] - (bootCounterAtStart ?: 0f)).toLong()
-                if (delta > localSessionSteps) localSessionSteps = delta
+                if (delta > localSessionSteps) {
+                    localSessionSteps = delta
+                    StepBus.setDelta(localSessionSteps)
+                }
             }
         }
     }

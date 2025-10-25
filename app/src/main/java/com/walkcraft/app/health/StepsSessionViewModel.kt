@@ -2,6 +2,7 @@ package com.walkcraft.app.health
 
 import android.app.Application
 import com.walkcraft.app.session.SessionFgService
+import com.walkcraft.app.session.StepBus
 import com.walkcraft.app.data.AppDb
 import com.walkcraft.app.data.SessionEntity
 import androidx.health.connect.client.HealthConnectClient
@@ -18,6 +19,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 /**
@@ -45,6 +47,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
 
     // --- Internal session timing/state ---
     private var pollJob: Job? = null
+    private var busJob: Job? = null
     private var startWallTimeMs: Long = 0L                     // for elapsed clock
     private var startInstant: Instant = Instant.EPOCH          // for aggregates
     private var uiFastBeat = false
@@ -100,6 +103,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
             // Kick off live lock-screen/notification updates
             SessionFgService.start(appContext, startWallTimeMs, baseline)
 
+            startBusCollector()
             startPolling()
         }
     }
@@ -108,6 +112,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
         pollJob?.cancel()
         pollJob = null
         _session.value = _session.value.copy(active = false, lastTickMs = System.currentTimeMillis())
+        stopBusCollector()
         viewModelScope.launch { clearStoredSession(appContext) }
 
         // Stop the foreground service
@@ -144,6 +149,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
     fun reset() {
         stop(save = false)
         _session.value = StepSessionState(lastTickMs = System.currentTimeMillis())
+        stopBusCollector()
     }
 
     fun refreshToday() {
@@ -152,6 +158,27 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
                 _todaySteps.value = HealthConnectHelper.readTodaySteps(client)
             }
         }
+    }
+
+    private fun startBusCollector() {
+        if (busJob?.isActive == true) return
+        busJob = viewModelScope.launch {
+            StepBus.delta.collectLatest { localDelta ->
+                if (_session.value.active) {
+                    val latest = _session.value.baselineSteps + localDelta
+                    val newLatest = maxOf(latest, _session.value.latestSteps)
+                    _session.value = _session.value.copy(
+                        latestSteps = newLatest,
+                        lastTickMs = System.currentTimeMillis()
+                    )
+                }
+            }
+        }
+    }
+
+    private fun stopBusCollector() {
+        busJob?.cancel()
+        busJob = null
     }
 
     /** Called by the screen when it resumes (and also from init after restore). */
@@ -171,6 +198,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
                 } else {
                     _session.value = _session.value.copy(lastTickMs = System.currentTimeMillis())
                 }
+                startBusCollector()
                 if (pollJob?.isActive != true) startPolling()
             } else if (HealthConnectHelper.hasStepsPermission(client)) {
                 _todaySteps.value = HealthConnectHelper.readTodaySteps(client)
