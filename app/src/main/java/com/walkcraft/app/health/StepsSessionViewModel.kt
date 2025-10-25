@@ -54,6 +54,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
     private var startInstant: Instant = Instant.EPOCH          // for aggregates
     private var uiVisible = false
     private var lastHcReadMs = 0L
+    private var lastLiveSteps: Long? = null
 
     private val pollIntervalMs = 15_000L                       // battery-friendly / near write cadence
     private val autoStopMinutes = 120L                         // guardrail
@@ -75,6 +76,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
                     latestSteps = stored.baselineSteps,
                     lastTickMs = System.currentTimeMillis()
                 )
+                lastLiveSteps = stored.baselineSteps
                 onResume() // one-shot catch-up + (re)start polling if needed
             }
         }
@@ -96,6 +98,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
                 latestSteps = baseline,
                 lastTickMs = System.currentTimeMillis()
             )
+            lastLiveSteps = baseline
 
             // Persist so we can resume after process death / app close.
             writeStoredSession(
@@ -120,6 +123,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
         stopBusCollector()
         stopLiveCollector()
         stopTicker()
+        lastLiveSteps = null
         viewModelScope.launch { clearStoredSession(appContext) }
 
         // Stop the foreground service
@@ -158,6 +162,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
         _session.value = StepSessionState(lastTickMs = System.currentTimeMillis())
         stopBusCollector()
         stopLiveCollector()
+        lastLiveSteps = null
     }
 
     fun refreshToday() {
@@ -173,12 +178,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
         busJob = viewModelScope.launch {
             StepBus.delta.collectLatest { localDelta ->
                 if (_session.value.active) {
-                    val latest = _session.value.baselineSteps + localDelta
-                    val newLatest = maxOf(latest, _session.value.latestSteps)
-                    _session.value = _session.value.copy(
-                        latestSteps = newLatest,
-                        lastTickMs = System.currentTimeMillis()
-                    )
+                    applyLiveDelta(localDelta)
                 }
             }
         }
@@ -194,12 +194,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
         liveJob = viewModelScope.launch {
             liveDeltaFlow(appContext).collectLatest { localDelta ->
                 if (_session.value.active) {
-                    val candidate = _session.value.baselineSteps + localDelta
-                    val newLatest = maxOf(candidate, _session.value.latestSteps)
-                    _session.value = _session.value.copy(
-                        latestSteps = newLatest,
-                        lastTickMs = System.currentTimeMillis()
-                    )
+                    applyLiveDelta(localDelta)
                 }
             }
         }
@@ -217,19 +212,22 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             lastHcReadMs = 0L
             if (_session.value.active) {
+                startLiveCollector()
+                startBusCollector()
+                val baseline = _session.value.baselineSteps
+                val liveLatest = baseline + StepBus.delta.value
+                applyLiveSnapshot(liveLatest)
                 if (HealthConnectHelper.hasStepsPermission(client)) {
                     val deltaAgg = stepsSinceStart()
                     val today = HealthConnectHelper.readTodaySteps(client)
                     val deltaToday = (today - _session.value.baselineSteps).coerceAtLeast(0)
                     val delta = maxOf(deltaAgg, deltaToday)
                     val latest = _session.value.baselineSteps + delta
-                    _session.value = _session.value.copy(latestSteps = latest, lastTickMs = System.currentTimeMillis())
-                    _todaySteps.value = today
-                    startLiveCollector()
+                    applyAggregateCandidate(latest, today)
+                    lastHcReadMs = System.currentTimeMillis()
                 } else {
                     _session.value = _session.value.copy(lastTickMs = System.currentTimeMillis())
                 }
-                startBusCollector()
                 if (pollJob?.isActive != true) startPolling()
                 startTickerIfNeeded()
             } else if (HealthConnectHelper.hasStepsPermission(client)) {
@@ -277,8 +275,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
                         val deltaToday = (today - _session.value.baselineSteps).coerceAtLeast(0)
                         val delta = maxOf(deltaAgg, deltaToday)
                         val latest = _session.value.baselineSteps + delta
-                        _session.value = _session.value.copy(latestSteps = latest, lastTickMs = now)
-                        _todaySteps.value = today
+                        applyAggregateCandidate(latest, today, now)
                         lastHcReadMs = now
                     } else if (!uiVisible) {
                         _session.value = _session.value.copy(lastTickMs = now)
@@ -312,6 +309,47 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
     private fun stopTicker() {
         tickerJob?.cancel()
         tickerJob = null
+    }
+
+    private fun applyLiveDelta(localDelta: Long) {
+        val now = System.currentTimeMillis()
+        val baseline = _session.value.baselineSteps
+        val latest = baseline + localDelta
+        val newLatest = maxOf(latest, _session.value.latestSteps)
+        if (newLatest != _session.value.latestSteps) {
+            _session.value = _session.value.copy(latestSteps = newLatest, lastTickMs = now)
+        } else {
+            _session.value = _session.value.copy(lastTickMs = now)
+        }
+        lastLiveSteps = newLatest
+    }
+
+    private fun applyLiveSnapshot(candidate: Long) {
+        if (!_session.value.active) return
+        val now = System.currentTimeMillis()
+        val newLatest = maxOf(candidate, _session.value.latestSteps)
+        if (newLatest != _session.value.latestSteps) {
+            _session.value = _session.value.copy(latestSteps = newLatest, lastTickMs = now)
+        } else {
+            _session.value = _session.value.copy(lastTickMs = now)
+        }
+        lastLiveSteps = newLatest
+    }
+
+    private fun applyAggregateCandidate(candidate: Long, today: Long?, now: Long = System.currentTimeMillis()) {
+        val liveFloor = lastLiveSteps ?: Long.MIN_VALUE
+        val monotonic = maxOf(candidate, liveFloor, _session.value.latestSteps)
+        if (monotonic != _session.value.latestSteps) {
+            _session.value = _session.value.copy(latestSteps = monotonic, lastTickMs = now)
+        } else {
+            _session.value = _session.value.copy(lastTickMs = now)
+        }
+        if (today != null && monotonic == candidate) {
+            _todaySteps.value = today
+        }
+        if (monotonic > liveFloor) {
+            lastLiveSteps = monotonic
+        }
     }
 
     /** Aggregate steps from session start to "now". */

@@ -132,8 +132,7 @@ class SessionFgService : Service(), SensorEventListener {
         }
         bootCounterAtStart = null
 
-        val initialElapsed = (System.currentTimeMillis() - startMs).coerceAtLeast(0L)
-        val initial = buildNotif(elapsedMs = initialElapsed, steps = localSessionSteps)
+        val initial = buildNotif(steps = localSessionSteps)
         if (Build.VERSION.SDK_INT >= 34) {
             ServiceCompat.startForeground(
                 this, NOTIF_ID, initial, ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH
@@ -167,24 +166,17 @@ class SessionFgService : Service(), SensorEventListener {
                     lastHcPoll = now
                 }
 
-                val elapsed = now - startMs
-                nm.notify(NOTIF_ID, buildNotif(elapsed, steps = localSessionSteps))
+                nm.notify(NOTIF_ID, buildNotif(steps = localSessionSteps))
                 delay(1_000L)
             }
         }
         return START_STICKY
     }
 
-    private fun buildNotif(elapsedMs: Long, steps: Long): Notification {
-        val totalSeconds = elapsedMs / 1000
-        val h = totalSeconds / 3600
-        val m = (totalSeconds % 3600) / 60
-        val s = totalSeconds % 60
-        val title = "Walking…  %d:%02d:%02d".format(h, m, s)
-
+    private fun buildNotif(steps: Long): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentTitle(title)
+            .setContentTitle("Walking…")
             .setContentText("Session steps: $steps")
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -193,6 +185,7 @@ class SessionFgService : Service(), SensorEventListener {
             .setShowWhen(true)
             .setWhen(startMs)
             .setUsesChronometer(true)
+            .setChronometerCountDown(false)
             .build()
     }
 
