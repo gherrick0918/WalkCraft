@@ -1,10 +1,6 @@
 package com.walkcraft.app.health
 
 import android.app.Application
-import com.walkcraft.app.session.SessionFgService
-import com.walkcraft.app.session.StepBus
-import com.walkcraft.app.data.AppDb
-import com.walkcraft.app.data.SessionEntity
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.StepsRecord
@@ -12,6 +8,11 @@ import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.walkcraft.app.data.AppDb
+import com.walkcraft.app.data.SessionEntity
+import com.walkcraft.app.session.SessionFgService
+import com.walkcraft.app.session.StepBus
+import com.walkcraft.app.session.liveDeltaFlow
 import java.time.Instant
 import java.time.ZoneId
 import java.util.concurrent.TimeUnit
@@ -48,6 +49,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
     // --- Internal session timing/state ---
     private var pollJob: Job? = null
     private var busJob: Job? = null
+    private var liveJob: Job? = null
     private var startWallTimeMs: Long = 0L                     // for elapsed clock
     private var startInstant: Instant = Instant.EPOCH          // for aggregates
     private var uiFastBeat = false
@@ -103,6 +105,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
             // Kick off live lock-screen/notification updates
             SessionFgService.start(appContext, startWallTimeMs, baseline)
 
+            startLiveCollector()
             startBusCollector()
             startPolling()
         }
@@ -113,6 +116,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
         pollJob = null
         _session.value = _session.value.copy(active = false, lastTickMs = System.currentTimeMillis())
         stopBusCollector()
+        stopLiveCollector()
         viewModelScope.launch { clearStoredSession(appContext) }
 
         // Stop the foreground service
@@ -150,6 +154,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
         stop(save = false)
         _session.value = StepSessionState(lastTickMs = System.currentTimeMillis())
         stopBusCollector()
+        stopLiveCollector()
     }
 
     fun refreshToday() {
@@ -181,6 +186,27 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
         busJob = null
     }
 
+    private fun startLiveCollector() {
+        if (liveJob?.isActive == true) return
+        liveJob = viewModelScope.launch {
+            liveDeltaFlow(appContext).collectLatest { localDelta ->
+                if (_session.value.active) {
+                    val candidate = _session.value.baselineSteps + localDelta
+                    val newLatest = maxOf(candidate, _session.value.latestSteps)
+                    _session.value = _session.value.copy(
+                        latestSteps = newLatest,
+                        lastTickMs = System.currentTimeMillis()
+                    )
+                }
+            }
+        }
+    }
+
+    private fun stopLiveCollector() {
+        liveJob?.cancel()
+        liveJob = null
+    }
+
     /** Called by the screen when it resumes (and also from init after restore). */
     fun onResume() {
         viewModelScope.launch {
@@ -195,6 +221,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
                     val latest = _session.value.baselineSteps + delta
                     _session.value = _session.value.copy(latestSteps = latest, lastTickMs = System.currentTimeMillis())
                     _todaySteps.value = today
+                    startLiveCollector()
                 } else {
                     _session.value = _session.value.copy(lastTickMs = System.currentTimeMillis())
                 }
