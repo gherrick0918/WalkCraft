@@ -105,7 +105,7 @@ class SessionFgService : Service(), SensorEventListener {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startMs = intent?.getLongExtra(EXTRA_START_MS, 0L) ?: 0L
-        baseline = intent?.getLongExtra(EXTRA_BASELINE, 0L) ?: 0L
+        baseline = intent?.getLongExtra(EXTRA_BASELINE, baseline) ?: baseline
 
         val initial = buildNotif(elapsedMs = 0L, steps = 0L)
         if (Build.VERSION.SDK_INT >= 34) {
