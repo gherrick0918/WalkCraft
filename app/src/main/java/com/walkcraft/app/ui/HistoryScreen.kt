@@ -91,7 +91,11 @@ fun HistoryScreen() {
 
                     item {
                         Spacer(Modifier.height(16.dp))
-                        Divider()
+                        HorizontalDivider(
+                            Modifier,
+                            DividerDefaults.Thickness,
+                            DividerDefaults.color
+                        )
                         Spacer(Modifier.height(12.dp))
                         Text("Sessions", style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(8.dp))
@@ -117,7 +121,11 @@ fun HistoryScreen() {
                                     Text(hc, style = MaterialTheme.typography.bodyMedium)
                                 }
                             }
-                            Divider()
+                            HorizontalDivider(
+                                Modifier,
+                                DividerDefaults.Thickness,
+                                DividerDefaults.color
+                            )
                         }
                     }
                 }
