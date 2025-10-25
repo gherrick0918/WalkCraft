@@ -52,13 +52,14 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
     private var liveJob: Job? = null
     private var startWallTimeMs: Long = 0L                     // for elapsed clock
     private var startInstant: Instant = Instant.EPOCH          // for aggregates
-    private var uiFastBeat = false
+    private var uiVisible = false
     private var lastHcReadMs = 0L
 
     private val pollIntervalMs = 15_000L                       // battery-friendly / near write cadence
     private val autoStopMinutes = 120L                         // guardrail
 
     private val appContext = getApplication<Application>()
+    private var tickerJob: Job? = null
 
     init {
         // Restore any persisted, active session and immediately catch up.
@@ -105,6 +106,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
             // Kick off live lock-screen/notification updates
             SessionFgService.start(appContext, startWallTimeMs, baseline)
 
+            startTickerIfNeeded()
             startLiveCollector()
             startBusCollector()
             startPolling()
@@ -117,6 +119,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
         _session.value = _session.value.copy(active = false, lastTickMs = System.currentTimeMillis())
         stopBusCollector()
         stopLiveCollector()
+        stopTicker()
         viewModelScope.launch { clearStoredSession(appContext) }
 
         // Stop the foreground service
@@ -209,8 +212,9 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Called by the screen when it resumes (and also from init after restore). */
     fun onResume() {
+        uiVisible = true
+        startTickerIfNeeded()
         viewModelScope.launch {
-            uiFastBeat = true
             lastHcReadMs = 0L
             if (_session.value.active) {
                 if (HealthConnectHelper.hasStepsPermission(client)) {
@@ -227,6 +231,7 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 startBusCollector()
                 if (pollJob?.isActive != true) startPolling()
+                startTickerIfNeeded()
             } else if (HealthConnectHelper.hasStepsPermission(client)) {
                 _todaySteps.value = HealthConnectHelper.readTodaySteps(client)
             }
@@ -234,7 +239,8 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun onPause() {
-        uiFastBeat = false
+        uiVisible = false
+        stopTicker()
     }
 
     /** Used by UI to decide whether to prompt for WRITE_EXERCISE before saving. */
@@ -274,16 +280,38 @@ class StepsSessionViewModel(app: Application) : AndroidViewModel(app) {
                         _session.value = _session.value.copy(latestSteps = latest, lastTickMs = now)
                         _todaySteps.value = today
                         lastHcReadMs = now
-                    } else {
+                    } else if (!uiVisible) {
                         _session.value = _session.value.copy(lastTickMs = now)
                     }
-                } else {
+                } else if (!uiVisible) {
                     _session.value = _session.value.copy(lastTickMs = now)
                 }
 
-                delay(if (uiFastBeat) 1000L else pollIntervalMs)
+                delay(if (uiVisible) 1_000L else pollIntervalMs)
             }
         }
+    }
+
+    private fun startTickerIfNeeded() {
+        if (!uiVisible) return
+        if (!_session.value.active) return
+        if (tickerJob?.isActive == true) return
+        tickerJob = viewModelScope.launch {
+            try {
+                while (uiVisible && _session.value.active) {
+                    val now = System.currentTimeMillis()
+                    _session.value = _session.value.copy(lastTickMs = now)
+                    delay(1_000L)
+                }
+            } finally {
+                tickerJob = null
+            }
+        }
+    }
+
+    private fun stopTicker() {
+        tickerJob?.cancel()
+        tickerJob = null
     }
 
     /** Aggregate steps from session start to "now". */

@@ -22,6 +22,7 @@ import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
+import com.walkcraft.app.health.readStoredSession
 import com.walkcraft.app.session.StepBus
 import com.walkcraft.app.session.clearLocalDelta
 import com.walkcraft.app.session.writeLocalDelta
@@ -32,6 +33,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
@@ -107,14 +109,31 @@ class SessionFgService : Service(), SensorEventListener {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startMs = intent?.getLongExtra(EXTRA_START_MS, 0L) ?: 0L
-        baseline = intent?.getLongExtra(EXTRA_BASELINE, baseline) ?: baseline
-        StepBus.reset()
-        localSessionSteps = 0L
+        val freshStart = intent != null
+        if (freshStart) {
+            startMs = intent?.getLongExtra(EXTRA_START_MS, 0L) ?: 0L
+            baseline = intent?.getLongExtra(EXTRA_BASELINE, baseline) ?: baseline
+            StepBus.reset()
+            localSessionSteps = 0L
+            scope.launch { clearLocalDelta(applicationContext) }
+        } else {
+            runBlocking {
+                val stored = readStoredSession(applicationContext)
+                if (stored.active && stored.startMs > 0L) {
+                    startMs = stored.startMs
+                    baseline = stored.baselineSteps
+                }
+                localSessionSteps = readLocalDelta(applicationContext)
+            }
+            StepBus.setDelta(localSessionSteps)
+        }
+        if (startMs == 0L) {
+            startMs = System.currentTimeMillis()
+        }
         bootCounterAtStart = null
-        scope.launch { clearLocalDelta(applicationContext) }
 
-        val initial = buildNotif(elapsedMs = 0L, steps = 0L)
+        val initialElapsed = (System.currentTimeMillis() - startMs).coerceAtLeast(0L)
+        val initial = buildNotif(elapsedMs = initialElapsed, steps = localSessionSteps)
         if (Build.VERSION.SDK_INT >= 34) {
             ServiceCompat.startForeground(
                 this, NOTIF_ID, initial, ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH
