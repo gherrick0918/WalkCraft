@@ -1,7 +1,7 @@
 package com.walkcraft.app.session
 
 import android.content.Context
-import androidx.datastore.preferences.core.LongPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.map
@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.map
 // File-scoped extension (use from both Service and ViewModel)
 val Context.sessionLiveDataStore by preferencesDataStore(name = "walkcraft_session_live")
 
-private val KEY_LOCAL_DELTA = LongPreferencesKey("local_delta_steps")
+private val KEY_LOCAL_DELTA = longPreferencesKey("local_delta_steps")
 
 // write
 suspend fun writeLocalDelta(ctx: Context, value: Long) {
