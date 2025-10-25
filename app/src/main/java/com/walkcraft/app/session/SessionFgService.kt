@@ -23,6 +23,8 @@ import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import com.walkcraft.app.session.StepBus
+import com.walkcraft.app.session.clearLocalDelta
+import com.walkcraft.app.session.writeLocalDelta
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -110,6 +112,7 @@ class SessionFgService : Service(), SensorEventListener {
         StepBus.reset()
         localSessionSteps = 0L
         bootCounterAtStart = null
+        scope.launch { clearLocalDelta(applicationContext) }
 
         val initial = buildNotif(elapsedMs = 0L, steps = 0L)
         if (Build.VERSION.SDK_INT >= 34) {
@@ -138,6 +141,7 @@ class SessionFgService : Service(), SensorEventListener {
                         if (delta > localSessionSteps) {
                             localSessionSteps = delta
                             StepBus.setDelta(localSessionSteps)
+                            scope.launch { writeLocalDelta(applicationContext, localSessionSteps) }
                         }
                     } catch (_: Throwable) {
                     }
@@ -173,16 +177,6 @@ class SessionFgService : Service(), SensorEventListener {
             .build()
     }
 
-    override fun onDestroy() {
-        try {
-            sm.unregisterListener(this)
-        } catch (_: Throwable) {
-        }
-        scope.cancel()
-        StepBus.reset()
-        super.onDestroy()
-    }
-
     override fun onBind(intent: Intent?): IBinder? = null
 
     // --- Sensor callbacks ---
@@ -192,6 +186,7 @@ class SessionFgService : Service(), SensorEventListener {
             Sensor.TYPE_STEP_DETECTOR -> {
                 localSessionSteps += 1
                 StepBus.setDelta(localSessionSteps)
+                scope.launch { writeLocalDelta(applicationContext, localSessionSteps) }
             }
             Sensor.TYPE_STEP_COUNTER -> {
                 if (bootCounterAtStart == null) bootCounterAtStart = ev.values[0]
@@ -199,10 +194,22 @@ class SessionFgService : Service(), SensorEventListener {
                 if (delta > localSessionSteps) {
                     localSessionSteps = delta
                     StepBus.setDelta(localSessionSteps)
+                    scope.launch { writeLocalDelta(applicationContext, localSessionSteps) }
                 }
             }
         }
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+
+    override fun onDestroy() {
+        try {
+            sm.unregisterListener(this)
+        } catch (_: Throwable) {
+        }
+        scope.launch { clearLocalDelta(applicationContext) }
+        scope.cancel()
+        StepBus.reset()
+        super.onDestroy()
+    }
 }
