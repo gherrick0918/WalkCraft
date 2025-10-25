@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
@@ -37,6 +38,7 @@ fun HistoryScreen() {
     val items = vm.items.collectAsStateWithLifecycle().value
     val loading = vm.loading.collectAsStateWithLifecycle().value
     val error = vm.error.collectAsStateWithLifecycle().value
+    val sessions = vm.sessions.collectAsStateWithLifecycle().value
 
     val required = remember {
         setOf(HealthPermission.getReadPermission(StepsRecord::class))
@@ -85,6 +87,38 @@ fun HistoryScreen() {
                             DividerDefaults.Thickness,
                             DividerDefaults.color
                         )
+                    }
+
+                    item {
+                        Spacer(Modifier.height(16.dp))
+                        Divider()
+                        Spacer(Modifier.height(12.dp))
+                        Text("Sessions", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(8.dp))
+                    }
+
+                    if (sessions.isEmpty()) {
+                        item {
+                            Text("No sessions yet.")
+                        }
+                    } else {
+                        items(sessions) { row ->
+                            Row(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(row.startText, style = MaterialTheme.typography.bodyLarge)
+                                    Text(
+                                        "Duration: ${row.durationText}",
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text("${row.steps} steps", style = MaterialTheme.typography.bodyLarge)
+                                    val hc = if (row.savedToHc) "HC ✓" else "HC —"
+                                    Text(hc, style = MaterialTheme.typography.bodyMedium)
+                                }
+                            }
+                            Divider()
+                        }
                     }
                 }
             }
